@@ -615,6 +615,10 @@ type
         lParams[0] := aInstance;
         var lDeclaringType := DeclaringType;
         if Utilities.IsInstance(aInstance, lDeclaringType.fValue) = nil then raise new ArgumentException('Instance must be compatible with method declaring type');
+        {$IFDEF WEBASSEMBLY}
+        if DeclaringType.IsValueType then
+          lParams[0] := ^IntPtr(@aInstance)^ + DeclaringType.BoxedDataOffset;
+        {$ENDIF}
         if lDeclaringType.IsValueType then
           lModes[0] := ArgumentMode.Var
         else
@@ -1254,6 +1258,12 @@ type
     method Instantiate: Object; // Creates a new instance of this type and calls the default constructor, fails if none is present!
     begin
       exit Instantiate<DefaultGC>();
+    end;
+
+    method InstantiateArray(aSize: IntPtr): &Array;
+    begin
+      if (IslandTypeFlags.TypeKindMask and fValue^.Ext^.Flags) <> IslandTypeFlags.Array then raise new Exception('Can only call InstantiateArray on arrays');
+      exit InternalCalls.Cast<&Array>(Utilities.NewArray(RTTI, if SubType.IsValueType then SubType.SizeOfType else sizeOf(^Void), aSize));
     end;
 
     method IsAssignableFrom(aOrg: &Type): Boolean;

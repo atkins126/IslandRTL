@@ -5,6 +5,11 @@ type
   private
     fMessage: String;
   public
+    constructor;
+    begin
+      fMessage := $"Exception of type '{typeOf(self).Name}' was thrown.";
+    end;
+
     constructor(aMessage: String);
     begin
       fMessage := aMessage;
@@ -17,6 +22,19 @@ type
     begin
       exit self.GetType().Name+': '+Message;
     end;
+  end;
+
+  RuntimeException = public class(Exception)
+  private
+    fCode: Cardinal;
+  public
+    constructor(aCode: Cardinal);
+    begin
+      inherited constructor('Runtime Error: '+aCode.ToString);
+      fCode := aCode;
+    end;
+
+    property Code: Cardinal read fCode;
   end;
 
   WindowsException = public class(Exception)
