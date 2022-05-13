@@ -1,6 +1,7 @@
 ﻿namespace RemObjects.Elements.System;
 
 interface
+
 {$IFNDEF NOFILES}
 type
   File = public class(BaseFile)
@@ -27,10 +28,16 @@ type
 
     method Exists: Boolean; override;
 
-
     class method Exists(aFile: String): Boolean;
     begin
       exit FileUtils.FileExists(aFile);
+    end;
+
+    method IsReadOnly: Boolean;
+
+    class method IsReadOnly(aFile: String): Boolean;
+    begin
+      exit FileUtils.FileIsReadOnly(aFile);
     end;
 
     method Move(NewFile: not nullable File);
@@ -69,7 +76,7 @@ begin
   if not Exists then raise new Exception('File is not exist:'+FullName);
   {$IFDEF WINDOWS}
   CheckForIOError(rtl.CopyFileW(FullName.ToFileName(),FullPathName.ToFileName(),True));
-  {$ELSEIF POSIX}
+  {$ELSEIF POSIX_LIGHT}
   var f2 := new FileStream(FullPathName,FileMode.CreateNew,FileAccess.Write,FileShare.None);
   var f1 := new FileStream(Self.FullName,FileMode.Open,FileAccess.Read,FileShare.Read);
   try
@@ -78,7 +85,8 @@ begin
     f1.Close;
     f2.Close;
   end;
-  {$ELSE}{$ERROR}
+  {$ELSE}
+  {$ERROR Unsupported platform}
   {$ENDIF}
   exit new File(FullPathName);
 end;
@@ -95,9 +103,10 @@ begin
   if not Exists then raise new Exception('File is not found:'+FullName);
   {$IFDEF WINDOWS}
   CheckForIOError(rtl.DeleteFileW(FullName.ToFileName()));
-  {$ELSEIF POSIX}
+  {$ELSEIF POSIX_LIGHT}
   CheckForIOError(rtl.remove(FullName.ToFileName()));
-  {$ELSE}{$ERROR}
+  {$ELSE}
+  {$ERROR Unsupported platform}
   {$ENDIF}
 end;
 
@@ -114,9 +123,10 @@ begin
   if not Exists then raise new Exception('File is not exist:'+FullName);
   {$IFDEF WINDOWS}
   CheckForIOError(rtl.MoveFileExW(Self.FullName.ToFileName(),FullPathName.ToFileName(), rtl.MOVEFILE_REPLACE_EXISTING OR rtl.MOVEFILE_COPY_ALLOWED));
-  {$ELSEIF POSIX}
+  {$ELSEIF POSIX_LIGHT}
   CheckForIOError(rtl.rename(Self.FullName.ToFileName(),FullPathName.ToFileName()));
-  {$ELSE}{$ERROR}
+  {$ELSE}
+  {$ERROR Unsupported platform}
   {$ENDIF}
   fFullName := FullPathName;
   exit self;
@@ -156,14 +166,22 @@ begin
   finally
     rtl.CloseHandle(handle);
   end;
-  {$ELSEIF POSIX}
+  {$ELSEIF POSIX_LIGHT}
   exit FileUtils.Get__struct_stat(FullName)^.st_size;
-  {$ELSE}{$ERROR}{$ENDIF}
+  {$ELSE}
+  {$ERROR Unsupported platform}
+  {$ENDIF}
 end;
 
 method File.Exists: Boolean;
 begin
   exit FileUtils.FileExists(fFullName)
+end;
+
+method File.IsReadOnly: Boolean;
+begin
+  if not Exists then raise new Exception('File is not found:' + FullName);
+  exit FileUtils.FileIsReadOnly(fFullName);
 end;
 
 method File.Validate;

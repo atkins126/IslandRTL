@@ -82,6 +82,7 @@ type
       Release(lValue);
     end;
 
+    [DllExport('__island_force_addref')]
     class method AddRef(aVal: Object);
     begin
       if aVal = nil then exit;
@@ -92,6 +93,7 @@ type
       end;
     end;
 
+    [DllExport('__island_force_release')]
     class method Release(aVal: Object);
     begin
       if aVal = nil then exit;
@@ -116,7 +118,7 @@ type
     class var fLoaded: Integer; assembly;
     class var fLocal: Boolean;
     class var fLock: Integer;
-    {$IFDEF POSIX}[LinkOnce]{$ENDIF}
+    {$IFDEF POSIX}[LinkOnce, DllExport]{$ENDIF}
     class var fSharedMemory: SharedMemory; assembly;
 
     {$IFDEF POSIX}[LinkOnce, DllExport]{$ENDIF}
@@ -128,16 +130,23 @@ type
       GC_set_pages_executable(0);
       {$ENDIF}
       GC_init;
+      {$IFNDEF WEBASSEMBLY}
       GC_allow_register_threads();
+      {$ENDIF}
       fSharedMemory.collect := @GC_gcollect;
       fSharedMemory.register := @GC_my_register_my_thread;
+      {$IFDEF WEBASSEMBLY}
+      fSharedMemory.unregister := () -> begin end;
+      {$ELSE}
       fSharedMemory.unregister := @GC_unregister_my_thread;
+      {$ENDIF}
       fSharedMemory.malloc := @GC_malloc;
       fSharedMemory.setfinalizer := @SetFinalizer;
       fSharedMemory.unsetfinalizer := @UnsetFinalizer;
     end;
 
     {$IFDEF WINDOWS}class var fMapping: rtl.HANDLE;{$ENDIF}
+    {$IFDEF LINUX AND NOT ANDROID}class var fMapping: Integer;{$ENDIF}
 
     [SkipDebug]
     class method LoadGC; assembly;
@@ -210,8 +219,76 @@ type
           rtl.CloseHandle(fMapping);
           fMapping := rtl.INVALID_HANDLE_VALUE;
         end;
+        fLoaded := 1;
+        {$ELSEIF LINUX AND NOT ANDROID}
+        var FN: array[0..29] of AnsiChar;
+        FN[0] := '/';
+        FN[1] := '_';
+        FN[2] := 'R';
+        FN[3] := 'e';
+        FN[4] := 'm';
+        FN[5] := 'O';
+        FN[6] := 'b';
+        FN[7] := 'j';
+        FN[8] := 'e';
+        FN[9] := 'c';
+        FN[10] := 't';
+        FN[11] := 's';
+        FN[12] := 'I';
+        FN[13] := 's';
+        FN[14] := 'l';
+        FN[15] := 'a';
+        FN[16] := 'n';
+        FN[17] := 'd';
+        FN[18] := '2'; // Version, increase when adding stuff or making the class layout incompatible
+        var lID := rtl.getpid();
+        FN[19] := AnsiChar(Integer('a')+Integer((lID shr 0) and $f));
+        FN[20] := AnsiChar(Integer('a')+Integer((lID shr 4) and $f));
+        FN[21] := AnsiChar(Integer('a')+Integer((lID shr 8) and $f));
+        FN[22] := AnsiChar(Integer('a')+Integer((lID shr 12) and $f));
+        FN[23] := AnsiChar(Integer('a')+Integer((lID shr 16) and $f));
+        FN[24] := AnsiChar(Integer('a')+Integer((lID shr 20) and $f));
+        FN[25] := AnsiChar(Integer('a')+Integer((lID shr 24) and $f));
+        FN[26] := AnsiChar(Integer('a')+Integer((lID shr 28) and $f));
+        FN[27] := 'A'; // boehm
+        FN[28] := #0;
+
+        fMapping := rtl.shm_open(@FN[0], rtl.O_CREAT or rtl.O_RDWR, rtl.S_IRUSR or rtl.S_IWUSR or rtl.S_IXUSR);
+
+        if fMapping = 0 then begin
+          LocalGC;
+          raise new Exception('Cannot create file mapping for memory sharing, this should not happen!');
+        end;
+        rtl.ftruncate(fMapping, 8);
+        var p: ^NativeInt := rtl.mmap(nil, 8, rtl.PROT_WRITE, rtl.MAP_SHARED, fMapping, 0);
+        if p = nil then begin
+          LocalGC;
+          raise new Exception('Cannot create file mapping for memory sharing, this should not happen!');
+        end;
+        var lNew := InternalCalls.VolatileRead(var p^) = 0;
+        if lNew then begin
+          LocalGC;
+          InternalCalls.VolatileWrite(var p^, NativeInt(@fSharedMemory));
+        end else begin
+          loop begin
+            var lData: ^SharedMemory := ^SharedMemory(InternalCalls.VolatileRead(var p^));
+            if lData = nil then Thread.Sleep(1) else begin
+              fSharedMemory := lData^;
+              break;
+            end;
+          end;
+        end;
+        rtl.munmap(p, 8);
+        if not lNew then begin
+          rtl.shm_unlink(FN);
+          fMapping := 0;
+        end;
+        fLoaded := 1;
         {$ELSE}
-        LocalGC;
+        if fSharedMemory.malloc = nil then
+          LocalGC
+        else
+          fLoaded := 1;
         {$ENDIF}
         Utilities.RegisterThreadHandlers(@RegisterThread, @UnregisterThread);
       finally
@@ -234,9 +311,24 @@ type
       if o = nil then exit;
       fSharedMemory.unsetfinalizer(InternalCalls.Cast(o));
     end;
+    {$IFDEF DARWIN}
+    [ThreadLocal]
+    class var Registered: Boolean;
+
+    class method ThreadDied(arg: ^Void);
+    begin
+      UnregisterThread;
+    end;
+    {$ENDIF}
 
     class method GC_my_register_my_thread: Integer;
     begin
+      {$IFDEF DARWIN}
+      if Registered then exit;
+      Registered := true;
+      _tlv_atexit(@ThreadDied, nil);
+      {$ENDIF}
+      {$IFNDEF WEBASSEMBLY}
       {$IFDEF WINDOWS}
       var sb: GC_stack_base;
       GC_get_stack_base(@sb);
@@ -245,6 +337,7 @@ type
       var sb: __struct_GC_stack_base;
       GC_get_stack_base(@sb);
       exit GC_register_my_thread(@sb);
+      {$ENDIF}
       {$ENDIF}
     end;
 
@@ -275,12 +368,27 @@ type
       end;
       result := ^Void(-1);
       if fLoaded = 0 then LoadGC;
-      result := fSharedMemory.malloc(aSize);
-      ^^Void(result)^ := aTTY;
-      memset(^Byte(result) + sizeOf(^Void), 0, aSize - sizeOf(^Void));
+
+      {$IFDEF DARWIN}
+      if not Registered then GC_my_register_my_thread;
+      {$ENDIF}
+      var lResult: IntPtr;
+      var lTmp := fSharedMemory.malloc(aSize);
+      {$IFDEF WEBASSEMBLY}
+      InternalCalls.VolatileWrite(var lResult, IntPtr(lTmp));
+      {$ELSE}
+      lResult := IntPtr(lTmp);
+      {$ENDIF}
+      ^^Void(lTmp)^ := aTTY;
+      memset(^Byte(lTmp) + sizeOf(^Void), 0, aSize - sizeOf(^Void));
       if ^^Void(aTTY)[Utilities.FinalizerIndex] <> fFinalizer then begin
-        fSharedMemory.setfinalizer(result);
+        fSharedMemory.setfinalizer(lTmp);
       end;
+      {$IFDEF WEBASSEMBLY}
+      result := ^Void(InternalCalls.VolatileRead(var lResult));
+      {$ELSE}
+      result := ^Void(lResult);
+      {$ENDIF}
     end;
 
     class method Assign(var aDest, aSource: BoehmGC);

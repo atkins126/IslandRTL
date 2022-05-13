@@ -1,6 +1,7 @@
 ﻿namespace RemObjects.Elements.System;
 
 interface
+
 {$IFNDEF NOFILES}
 type
   IOException = public class(Exception)
@@ -11,6 +12,8 @@ type
   FileShare = public enum(None, &Read, &Write, ReadWrite, Delete);
   {$IF WINDOWS}
   PlatformHandle = rtl.HANDLE;
+  {$ELSEIF FUCHSIA}
+  PlatformHandle = ^rtl.zx_handle_t;
   {$ELSEIF ANDROID OR DARWIN or ARM64}
   PlatformHandle = ^rtl.FILE;
   {$ELSEIF POSIX}
@@ -74,7 +77,7 @@ begin
                         end;
   fHandle := rtl.CreateFileW(lName, lAccess, lShare, nil, lmode, rtl.FILE_ATTRIBUTE_NORMAL, nil);
   CheckForIOError(fHandle <> rtl.INVALID_HANDLE_VALUE);
-  {$ELSEIF POSIX}
+  {$ELSEIF POSIX_LIGHT}
   var s: AnsiChar := AnsiChar(case Mode of
                                 FileMode.CreateNew: 'w';
                                 FileMode.Create: 'w';
@@ -83,13 +86,15 @@ begin
                                 FileMode.Truncate: 'w';
                               end);
   {$IFDEF ANDROID or DARWIN}
-  fHandle := rtl.fopen(FileName.ToFileName(),@s);
+  fHandle := rtl.fopen(FileName.ToFileName(), @s);
+  {$ELSEIF FUCHSIA}
+  fHandle := rtl.fopen(FileName.ToFileName(), @s);
   {$ELSE}
-  fHandle := rtl.fopen64(FileName.ToFileName(),@s);
+  fHandle := rtl.fopen64(FileName.ToFileName(), @s);
   {$ENDIF}
   if fHandle = nil then CheckForIOError(1);
   {$ELSE}
-    {$ERROR}
+  {$ERROR Unsupported platform}
   {$ENDIF}
 end;
 
@@ -108,13 +113,14 @@ method FileStream.IsValid: Boolean;
 begin
   {$IFDEF WINDOWS}
   exit fHandle <> rtl.INVALID_HANDLE_VALUE;
-  {$ELSEIF POSIX}
+  {$ELSEIF POSIX_LIGHT}
   exit fHandle <> nil;
   {$ELSE}
-    {$ERROR}
+  {$ERROR Unsupported platform}
   {$ENDIF}
 end;
 
+{$IFDEF FUCHSIA}[Warning("FileStream.Seek is not implemented for Fuchsia, yet.")]{$ENDIF}
 method FileStream.Seek(Offset: Int64; Origin: SeekOrigin): Int64;
 begin
   if not CanSeek then raise new NotSupportedException();
@@ -134,7 +140,7 @@ begin
       CheckForIOError(True);
   end;
   exit lResult + Offset shl 32;
-  {$ELSEIF POSIX}
+  {$ELSEIF POSIX_LIGHT}
   var lOrigin: Int32 :=  case Origin of
                           SeekOrigin.Begin: rtl.SEEK_SET;
                           SeekOrigin.Current: rtl.SEEK_CUR;
@@ -144,14 +150,21 @@ begin
   result := rtl.fseek(fHandle, Offset, lOrigin);
   CheckForIOError(result);
   result := rtl.ftell(fHandle);
+  {$ELSEIF FUCHSIA}
+  CheckForIOError(rtl.fseeko(fHandle, Offset, lOrigin));
+  var pos: rtl.fpos_t;
+  CheckForIOError(rtl.fgetpos(fHandle, @pos));
+  raise new NotImplementedException("FileStream.Seek is not implemented for Fuchsia, yet.");
+  {$WARNING FileStream.Seek is not implemented for Fuchsia, yet.}
+  //exit pos.__pos;
   {$ELSE}
   CheckForIOError(rtl.fseeko64(fHandle, Offset, lOrigin));
   var pos: rtl._G_fpos64_t;
-  CheckForIOError(rtl.fgetpos64(fHandle,@pos));
+  CheckForIOError(rtl.fgetpos64(fHandle, @pos));
   exit pos.__pos;
   {$ENDIF}
   {$ELSE}
-    {$ERROR}
+  {$ERROR Unsupported platform}
   {$ENDIF}
 end;
 
@@ -159,15 +172,15 @@ method FileStream.Close;
 begin
   if IsValid then begin
     if CanWrite then Flush;
-  {$IFDEF WINDOWS}
+    {$IFDEF WINDOWS}
     rtl.CloseHandle(fHandle);
     fHandle := rtl.INVALID_HANDLE_VALUE;
-  {$ELSEIF POSIX}
+    {$ELSEIF POSIX_LIGHT}
     CheckForIOError(rtl.fclose(fHandle));
     fHandle := nil;
-  {$ELSE}
-    {$ERROR}
-  {$ENDIF}
+    {$ELSE}
+    {$ERROR Unsupported platform}
+    {$ENDIF}
   end;
 end;
 
@@ -177,7 +190,7 @@ begin
   Seek(value, SeekOrigin.Begin);
   {$IFDEF WINDOWS}
   CheckForIOError(rtl.SetEndOfFile(fHandle));
-  {$ELSEIF DARWIN}
+  {$ELSEIF DARWIN OR FUCHSIA}
   {$HINT POSIX FileStream.SetLength. it may not work correctly, because _IO_FILE could be no updated }
   var fd := rtl.fileno(fHandle);
   CheckForIOError(rtl.ftruncate(fd, value));
@@ -186,7 +199,7 @@ begin
   var fd := rtl.fileno(fHandle);
   CheckForIOError(rtl.ftruncate64(fd, value));
   {$ELSE}
-    {$ERROR}
+  {$ERROR Unsupported platform}
   {$ENDIF}
 end;
 
@@ -198,10 +211,10 @@ begin
   var res: rtl.DWORD;
   CheckForIOError(rtl.ReadFile(fHandle, aSpan.Pointer, aSpan.Length, @res, nil));
   exit res;
-  {$ELSEIF POSIX}
+  {$ELSEIF POSIX_LIGHT}
   exit rtl.fread(aSpan.Pointer, 1, aSpan.Length, fHandle);
   {$ELSE}
-    {$ERROR}
+  {$ERROR Unsupported platform}
   {$ENDIF}
 end;
 
@@ -213,10 +226,10 @@ begin
   var res: rtl.DWORD;
   CheckForIOError(rtl.WriteFile(fHandle, aSpan.Pointer, aSpan.Length, @res, nil));
   exit res;
-  {$ELSEIF POSIX}
+  {$ELSEIF POSIX_LIGHT}
   exit rtl.fwrite(aSpan.Pointer, 1, aSpan.Length, fHandle);
   {$ELSE}
-    {$ERROR}
+  {$ERROR Unsupported platform}
   {$ENDIF}
 end;
 
@@ -225,11 +238,11 @@ begin
   if not CanWrite then raise new NotSupportedException;
   {$IFDEF WINDOWS}
   rtl.FlushFileBuffers(fHandle);
-  {$ELSEIF POSIX}
+  {$ELSEIF POSIX_LIGHT}
   var fd := rtl.fileno(fHandle);
   CheckForIOError(rtl.fsync(fd));
   {$ELSE}
-    {$ERROR}
+  {$ERROR Unsupported platform}
   {$ENDIF}
 end;
 {$ENDIF}

@@ -47,7 +47,7 @@ begin
   {$ELSE}
   var c := s.ToAnsiChars(true);
   rtl.printf("%s", @c[0]);
- {$ENDIF}
+  {$ENDIF}
 end;
 
 class method Console.WriteLine(s: String);
@@ -94,7 +94,7 @@ begin
   var bufsize := 255;
   var offset := 0;
   var buf: array[0..255] of AnsiChar;
-  while true do begin
+  loop begin
     var ch := ReadChar();
     if ch = #0 then break; // problem with Read
     {$IFDEF WINDOWS}
@@ -134,7 +134,7 @@ begin
   var c := rtl.getchar();
   if c < 0 then exit #0;
   exit AnsiChar(c);
- {$ENDIF}
+  {$ENDIF}
   {$ENDIF}
 end;
 

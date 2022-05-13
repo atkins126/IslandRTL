@@ -95,7 +95,7 @@ type
     property IsReadOnly: Boolean read fIsReadOnly;
   end;
 
-  PlatformLocale = {$IF WINDOWS}rtl.LCID{$ELSEIF LINUX AND NOT ANDROID}rtl.locale_t{$ELSEIF DARWIN}CoreFoundation.CFLocaleRef{$ELSEIF ICU_LOCALE OR WEBASSEMBLY}String{$ENDIF};
+  PlatformLocale = {$IF WINDOWS}rtl.LCID{$ELSEIF (LINUX OR FUCHSIA) AND NOT ANDROID}rtl.locale_t{$ELSEIF DARWIN}CoreFoundation.CFLocaleRef{$ELSEIF ICU_LOCALE OR WEBASSEMBLY}String{$ENDIF};
 
   Locale = public class
   private
@@ -221,7 +221,7 @@ begin
   if lTemp.Length > 0 then
   lThousandsSep := lTemp[0];
   {$ELSEIF LINUX AND NOT ANDROID}
-  var lTemp := rtl.nl_langinfo_l(rtl.THOUSANDS_SEP, fLocaleID);
+  var lTemp := rtl.nl_langinfo_l({$IF FUCHSIA}rtl.THOUSEP{$ELSE}rtl.THOUSANDS_SEP{$ENDIF}, fLocaleID);
   if lTemp <> nil then begin
     var lTempString := String.FromPAnsiChars(lTemp);
     if lTempString.Length > 0 then
@@ -306,6 +306,9 @@ begin
   if lLength = 0 then
     raise new Exception("Error getting locale name");
   result := String.FromPChar(@lName[0], lLength) as not nullable;
+  {$ELSEIF FUCHSIA}
+  {$WARNING Not Implememnted for Fuchsia yet}
+  raise new NotImplementedException;
   {$ELSEIF LINUX AND NOT ANDROID}
   var lName := rtl.nl_langinfo_l(rtl._NL_IDENTIFICATION_LANGUAGE, fLocaleID);
   if lName = nil then
@@ -331,7 +334,12 @@ begin
     fInvariant := new Locale(rtl.LOCALE_INVARIANT, true);
     {$ELSEIF LINUX AND NOT ANDROID}
     var lInvariant := 'en_US.utf8'.ToAnsiChars(true);
-    fInvariant := new Locale(rtl.newLocale(rtl.LC_ALL_MASK, @lInvariant[0], nil), true);
+    var lHandle := rtl.newLocale(rtl.LC_ALL_MASK, @lInvariant[0], nil);
+    if Integer(lHandle) = 0 then begin
+      lInvariant := 'POSIX'.ToAnsiChars(true);
+      lHandle := rtl.newLocale(rtl.LC_ALL_MASK, @lInvariant[0], nil);
+    end;
+    fInvariant := new Locale(lHandle, true);
     {$ELSEIF DARWIN}
     fInvariant := new Locale(CFLocaleGetSystem());
     {$ELSEIF ICU_LOCALE OR WEBASSEMBLY}
@@ -441,6 +449,25 @@ begin
 
   lFormatter := CFDateFormatterCreate(nil, aLocale, CFDateFormatterStyle.ShortStyle, CFDateFormatterStyle.NoStyle);
   fShortDatePattern := bridge<Foundation.NSString>(CFDateFormatterGetFormat(lFormatter));
+
+  lFormatter := CFDateFormatterCreate(nil, aLocale, CFDateFormatterStyle.LongStyle, CFDateFormatterStyle.FullStyle);
+  lData := CFDateFormatterCopyProperty(lFormatter, kCFDateFormatterWeekdaySymbols);
+  var lData2 := CFDateFormatterCopyProperty(lFormatter, kCFDateFormatterShortWeekdaySymbols);
+  var lArray: NSArray := bridge<Foundation.NSArray>(CFArrayRef(lData));
+  var lArray2: NSArray := bridge<Foundation.NSArray>(CFArrayRef(lData2));
+  for i: Integer := 0 to 6 do begin
+    fShortDayNames[i] := lArray2[i] as NSString;
+    fLongDayNames[i] := lArray[i] as NSString;
+  end;
+
+  lData := CFDateFormatterCopyProperty(lFormatter, kCFDateFormatterMonthSymbols);
+  lData2 := CFDateFormatterCopyProperty(lFormatter, kCFDateFormatterShortMonthSymbols);
+  lArray := bridge<Foundation.NSArray>(CFArrayRef(lData));
+  lArray2 := bridge<Foundation.NSArray>(CFArrayRef(lData2));
+  for i: Integer := 0 to 11 do begin
+    fShortMonthNames[i] := lArray2[i] as NSString;
+    fLongMonthNames[i] := lArray[i] as NSString;
+  end;
 
   //fDateSeparator := GetDateSeparator(fShortDatePattern);
   //fTimeSeparator := GetTimeSeparator(fShortTimePattern);

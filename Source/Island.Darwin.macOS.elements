@@ -14,9 +14,10 @@
     <WarnOnCaseMismatch>True</WarnOnCaseMismatch>
     <Platform Condition="'$(Platform)' == ''">AnyCPU</Platform>
     <GenerateDebugInfo>True</GenerateDebugInfo>
-    <DefineConstants>POSIX;DARWIN;MACOS;x86_64</DefineConstants>
+    <DefineConstants>POSIX;POSIX_LIGHT</DefineConstants>
     <SDK>macOS</SDK>
     <DefaultGlobalsToPublic>True</DefaultGlobalsToPublic>
+    <DeploymentTargetVersion>10.12</DeploymentTargetVersion>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
     <OutputPath>Bin\Debug</OutputPath>
@@ -28,6 +29,7 @@
     <XmlDocWarningLevel>WarningOnPublicMembers</XmlDocWarningLevel>
     <EnableUnmanagedDebugging>False</EnableUnmanagedDebugging>
     <GenerateDebugInfo>True</GenerateDebugInfo>
+    <Architecture>arm64</Architecture>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <OutputPath>Bin\Release</OutputPath>
@@ -41,6 +43,7 @@
     <EnableUnmanagedDebugging>False</EnableUnmanagedDebugging>
     <GenerateDebugInfo>False</GenerateDebugInfo>
     <Optimize>True</Optimize>
+    <Architecture>arm64</Architecture>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="BoehmGC.pas" />
@@ -53,6 +56,7 @@
     <Compile Include="SwiftAny.pas" />
     <Compile Include="SwiftArray.pas" />
     <Compile Include="SwiftString.pas" />
+    <Compile Include="Posix_FFI_ARM64.pas" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="gc" />

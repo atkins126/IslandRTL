@@ -3,24 +3,36 @@
 type
   Exception = public class(Object)
   private
-    fMessage: String;
+    fMessage: not nullable String;
+    fInnerException: nullable Exception;
+    property DefaultExceptionMessage: not nullable String read $"An Exception of type '{typeOf(self).Name}' was thrown.";
   public
     constructor;
     begin
-      fMessage := $"Exception of type '{typeOf(self).Name}' was thrown.";
+      fMessage := DefaultExceptionMessage;
     end;
 
-    constructor(aMessage: String);
+    constructor(aMessage: nullable String);
+    begin
+      fMessage := coalesce(aMessage, DefaultExceptionMessage);
+    end;
+
+    constructor(aMessage: not nullable String; aException: not nullable Exception);
     begin
       fMessage := aMessage;
+      fInnerException := aException;
     end;
 
     property ExceptionAddress: ^Void read assembly write;
 
-    property Message: String read fMessage; virtual;
+    property Message: not nullable String read fMessage; virtual;
+    property InnerException: nullable Exception read fInnerException; virtual;
+
     method ToString: String; override;
     begin
-      exit self.GetType().Name+': '+Message;
+      result := self.GetType().Name+': '+Message;
+      if assigned(fInnerException) then
+        result := result+Environment.NewLine+Environment.NewLine+fInnerException.ToString;
     end;
   end;
 
@@ -134,6 +146,15 @@ type
   end;
 
   ArgumentException = public class(Exception)
+  public
+    constructor(aMessage: String); empty;
+
+    constructor(aMessage: String; aParamName: String);
+    begin
+      ParamName := aParamName;
+    end;
+
+    property ParamName: nullable String; readonly;
   end;
 
   IndexOutOfRangeException = public class(Exception)

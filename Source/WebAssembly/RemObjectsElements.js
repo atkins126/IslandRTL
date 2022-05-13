@@ -6,10 +6,11 @@
     else if (typeof define === "function" && define.amd) {
         define(["require", "exports"], factory);
     }
-else { factory(function(name){return this;}, this); }
+    else { factory(function(name){return this;}, this); }
 })(function (require, exports) {
     "use strict";
     exports.__esModule = true;
+    exports.ElementsWebAssembly = exports.__elements_debug_wasm_fromHexString = exports.__elements_debug_wasm_toHexString = exports.__elements_debug_getglobal = exports.__elements_debug_setglobal = void 0;
     ///<reference path="webassembly.es6.d.ts" />
     // __elements_debug_wasm_loaded; Keep this on line 3 for debugging purposes
     function __elements_debug_wasm_loaded(url, bytes, data, importObject, memory) {
@@ -209,6 +210,29 @@ else { factory(function(name){return this;}, this); }
                 ReleaseReference(old['__elements_handle']);
         }
         ElementsWebAssembly.releaseHandle = releaseHandle;
+        function WrapTask(ptr) {
+            var handle;
+            var obj = {
+                reject: undefined,
+                resolve: undefined,
+                failed: function (e) {
+                    releaseHandle(handle);
+                    obj.reject(e);
+                },
+                finished: function (v) {
+                    releaseHandle(handle);
+                    obj.resolve(v);
+                }
+            };
+            handle = createHandle(obj);
+            var prom = new Promise(function (res, rej) {
+                obj.resolve = res;
+                obj.reject = rej;
+            });
+            result.instance.exports["__island_task_wrap"](handle, ptr);
+            return prom;
+        }
+        ElementsWebAssembly.WrapTask = WrapTask;
         function getHandleValue(handle) {
             if (!handle || handle == 0)
                 return null;
@@ -318,6 +342,11 @@ else { factory(function(name){return this;}, this); }
             imp.env.__island_consolelogint = function (val) {
                 console.log("Value: " + val);
             };
+            
+            imp.env.__island_wraptask = function(obj) {
+                return createHandle(WrapTask(obj));
+            }
+            
             imp.env.__island_to_lower = function (val, len, invar) {
                 if (invar)
                     return createHandle(readCharsFromMemory(val, len).toLowerCase());
@@ -366,11 +395,19 @@ else { factory(function(name){return this;}, this); }
                     case 'number': return 3;
                     case 'function': return 4;
                     case 'symbol': return 5;
-                    case 'object': return 6;
+                    case 'object': {
+                        if (Object.prototype.toString.call(ht) === "[object Date]") {
+                            return 10;
+                        }
+                        return 6;
+                    }
                     case 'boolean': return 7;
                     default:
                         return -1;
                 }
+            };
+            imp.env.__island_create_date = function (val) {
+                return createHandle(new Date(Number(val)));
             };
             imp.env.__island_get_intvalue = function (handle) {
                 return handletable[handle];
@@ -474,6 +511,12 @@ else { factory(function(name){return this;}, this); }
             imp.env.__island_require = function (name) {
                 var obj = [];
                 return createHandle(require(readStringFromMemory(name)));
+            };
+            imp.env.__island_copy_from_array = function (targetOff, inputArray, inputOffset, size) {
+                new Uint8Array(mem.buffer, targetOff, size).set(getHandleValue(inputArray).slice(inputOffset, size + inputOffset));
+            };
+            imp.env.__island_copy_to_array = function (inputOff, targetArray, targetOffset, size) {
+                getHandleValue(targetArray).set(new Uint8Array(mem.buffer, inputOff, size), targetOffset);
             };
             imp.env.__island_setTimeout = function (fn, timeout) {
                 return glob.setTimeout(createDelegate(fn), timeout);

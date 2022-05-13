@@ -89,8 +89,21 @@ type
 
   end;
 
+  _Unwind_LamdingPadContext = public class
+  public
+    lpad_index: UIntPtr;
+    lsda: UIntPtr;
+    &selector: UInt64;
+  end;
+
   WebAssemblyCalls = public static class
   public
+    [DllImport('', EntryPoint := '__island_copy_to_array')]
+    class method CopyToArray(inputOff: ^Byte; targetArray: IntPtr; targetOffset, size: Integer); external;
+
+    [DllImport('', EntryPoint := '__island_copy_from_array')]
+    class method CopyFromArray(TargetOff: ^Byte; InputArray: IntPtr; InputOffset, size: Integer); external;
+
     [DllImport('', EntryPoint := '__island_consolelogint')]
     class method ConsoleLog(val: Integer); external;
 
@@ -139,6 +152,9 @@ type
     [DllImport('', EntryPoint := '__island_get_typeof')]
     class method GetTypeOf(aHandle: IntPtr): WebAssemblyType; external;
 
+    [DllImport('', EntryPoint := '__island_create_date')]
+    class method CreateDate(aValue: Int64): Integer; external;
+
     [DllImport('', EntryPoint := '__island_get_intvalue')]
     class method GetIntValue(aHandle: IntPtr): Int32; external;
 
@@ -162,6 +178,9 @@ type
 
     [DllImport('', EntryPoint := '__island_clone_handle')]
     class method CloneHandle(aHandle: IntPtr): IntPtr; external;
+
+    [DllImport('', Entrypoint := '__island_wraptask')]
+    class method WrapTask(aHandle: Object): IntPtr; external;
 
     [DllImport('', EntryPoint := '__island_add_event')]
     class method AddEvent(aSelf: IntPtr; aName: String; inst: WebAssemblyDelegate); external;
@@ -360,8 +379,38 @@ type
       exit Call(aName, aArgs);
     end;
 
+    class method FutureToAsync(aValue: dynamic): Task<dynamic>;
+    begin
+      var lCP := new TaskCompletionSource<dynamic>;
+      result := lCP.Task;
+      var lCall, lExCall: WebAssemblyDelegate;
+      var lHandle1, lHandle2, lHandle3: GCHandle;
+      lCall := b -> begin
+        lCP.SetResult(b[0]);
+        lHandle1.Dispose;
+        lHandle2.Dispose;
+        lHandle3.Dispose;
+      end;
+      lExCall := b -> begin
+        lCP.SetException(new Exception(String(b:ToString())));
+        lHandle1.Dispose;
+        lHandle2.Dispose;
+        lHandle3.Dispose;
+      end;
+
+      lHandle1 := GCHandle.Allocate(IntPtr(InternalCalls.Cast(lCP)));
+      lHandle2 := GCHandle.Allocate(IntPtr(InternalCalls.Cast(lCall)));
+      lHandle3 := GCHandle.Allocate(IntPtr(InternalCalls.Cast(lExCall)));
+      aValue.then(lCall, lExCall);
+    end;
+
     method Unary(aOp: DynamicUnaryOperator; out aResult: Object): Boolean;
     begin
+      if aOp = DynamicUnaryOperator.Await then begin
+        aResult := FutureToAsync(self);
+        exit true;
+      end;
+
       exit false;
     end;
 
@@ -371,6 +420,19 @@ type
     end;
 
   public
+    // Copy this typed array to a native array
+    method CopyToNativeArray<T>(aNativeOffset: Integer; aNativeArray: array of T; aTypedArrayOffset, aSize: Integer);
+    begin
+      aSize := Math.Min(aSize, (aSize - aNativeOffset));
+      WebAssemblyCalls.CopyFromArray(^Byte(@aNativeArray[aNativeOffset]), Handle, aTypedArrayOffset, aSize * sizeOf(T));
+    end;
+
+    // Copy this typed array from a native array
+    method CopyFromNativeArray<T>(aNativeOffset: Integer; aNativeArray: array of T; aTypedArrayOffset, aSize: Integer);
+    begin
+      aSize := Math.Min(aSize, (aSize - aNativeOffset) / sizeOf(T));
+      WebAssemblyCalls.CopyToArray(^Byte(@aNativeArray[aNativeOffset]), Handle, aTypedArrayOffset, aSize * sizeOf(T));
+    end;
 
     constructor(aValue: IntPtr);
     begin
@@ -497,10 +559,17 @@ type
     begin
       if aVal = nil then exit nil;
       if aType = nil then exit nil;
-      if aType.IsValueType then exit aVal;
+      if aType.IsValueType then begin
+        exit aVal;
+      end;
+      var lType := aVal.GetType;
+      if aVal is Task then
+        exit new EcmaScriptObject(WebAssemblyCalls.WrapTask(aVal));
+      if (lType = aType) or lType.IsSubclassOf(aType) then exit aVal;
       var lVal := InternalCalls.Cast<Object>(^Void(Convert.ToUInt32(aVal)));
       if lVal = 0 then exit nil;
       if lVal is String then exit lVal;
+
       exit CreateProxy(lVal);
     end;
 
@@ -509,6 +578,8 @@ type
       if aVal = nil then exit nil;
       if aType = nil then exit nil;
       if aType.IsValueType then exit aVal;
+      var lType := aVal.GetType;
+      if (lType = aType) or lType.IsSubclassOf(aType) then exit aVal;
       exit Int32(InternalCalls.Cast(aVal));
     end;
 
@@ -529,7 +600,8 @@ type
         var lWM := el.WriteMethod;
 
         if lRM <> nil then begin
-          lGet := o -> UnwrapIfNeeded(el.Type, WebAssembly.InvokeMethod(lRM, [GetPtrFromObject(o)]));
+          lGet := o -> UnwrapIfNeeded(el.Type,
+                                      WebAssembly.InvokeMethod(lRM, [GetPtrFromObject(o)], el.Type));
         end;
         if lWM <> nil then begin
           lSet := (o, v) -> WebAssembly.InvokeMethod(lWM, [GetPtrFromObject(o), WrapIfNeeded(el.Type, v)]);
@@ -568,8 +640,9 @@ type
       var ov: EcmaScriptObject := GetProxyFor(o.GetType);
       var ptr := IntPtr(InternalCalls.Cast(o));
 
-      SimpleGC.ForceAddRef(ptr);
-      result := EcmaScriptObject(EcmaScriptObject(Object).Call('create', new EcmaScriptObject(WebAssemblyCalls.CloneHandle(ov.Handle))));
+      ForeignBoehmGC.AddRef(o);
+      var lObj: Object := Object;
+      result := EcmaScriptObject(EcmaScriptObject(lObj).Call('create', new EcmaScriptObject(WebAssemblyCalls.CloneHandle(ov.Handle))));
       result['__elements_handle'] := ptr;
     end;
 
@@ -595,6 +668,25 @@ type
       exit IntPtr(InternalCalls.Cast(lEC));
     end;
 
+    [SymbolName('__island_task_wrap'), Used, DllExport]
+    class method TaskWrap(aTarget: IntPtr; aInput: Task);
+    begin
+      var lOrg := new EcmaScriptObject(aTarget);
+      var lProxy := CreateProxy(aInput);
+      lOrg['value'] := lProxy.Handle;
+      _ := aInput.ContinueWith(() -> begin
+        ReleaseProxy(lProxy);
+        if aInput.IsFaulted then begin
+          lOrg.Call('failed', aInput.Exception.ToString());
+        end else begin
+          if aInput is IReturningTask then
+            lOrg.Call('finished', IReturningTask(aInput).GetValue())
+          else
+            lOrg.Call('finished');
+        end;
+      end);
+    end;
+
     [SymbolName('__island_unwrap'), Used, DllExport]
     class method Unwrap(o: IntPtr): IntPtr;
     // o is a pointer, returns either a handle ot a proxy or the handle to an ecmascriptobject.
@@ -616,7 +708,7 @@ type
       if o['__elements_handle'] = nil then exit;
       var lPtr := Convert.ToInt32(o['__elements_handle']);
       if lPtr = 0 then exit;
-      SimpleGC.ForceRelease(lPtr);
+      ForeignBoehmGC.Release(o);
     end;
 
     class method GetObjectForHandle(aHandle: IntPtr): Object; // Note; takes ownership (and frees if needed)
@@ -626,6 +718,12 @@ type
         WebAssemblyType.String: result := GetStringFromHandle(aHandle);
         WebAssemblyType.Number: result := WebAssemblyCalls.GetDoubleValue(aHandle);
         WebAssemblyType.Boolean: result := Convert.ToBoolean(WebAssemblyCalls.GetIntValue(aHandle));
+        WebAssemblyType.Date: begin
+            result := new EcmaScriptObject(aHandle);
+            var val := Convert.ToInt64(EcmaScriptObject(result).Call('getTime'));
+            EcmaScriptObject(result).Dispose;
+            exit new DateTime(1970, 1, 1, 0, 0, 0, 0).AddMilliseconds(val);
+          end;
         else begin
           result := new EcmaScriptObject(aHandle);
           var val := EcmaScriptObject(result)['__elements_handle'];
@@ -634,7 +732,6 @@ type
             var lHandle := Convert.ToInt32(val);
             result := InternalCalls.Cast<Object>(^Void(lHandle));
           end;
-
           exit;
         end;
       end;
@@ -651,8 +748,19 @@ type
       exit lVal;
     end;
 
-    class method InvokeMethod(aPtr: ^Void; params args: array of Object): Object;
+    class method InvokeMethod(aPtr: ^Void; args: array of Object; aResultType: &Type := nil): Object;
     begin
+      if assigned(aResultType) and (aResultType.IsValueType) and (aResultType.SizeOfType > 4) then begin
+        // "struct ret" is passed as the first argument, this is where the value will go.
+        var lTmp := aResultType.Instantiate();
+        var lData := new IntPtr[length(args) + 1];
+        lData[0] := WebAssembly.CreateHandle(IntPtr(InternalCalls.Cast(lTmp)) + aResultType.BoxedDataOffset, true);
+        for i: Integer := 0 to length(args) -1 do
+          lData[i + 1] := WebAssembly.CreateHandle(args[i], true);
+        WebAssemblyCalls.Invoke(IntPtr(aPtr), @lData[0], lData.Length);
+        exit lTmp;
+        // result is a byref!
+      end;
       var lData := new IntPtr[length(args)];
       for i: Integer := 0 to length(args) -1 do
         lData[i] := WebAssembly.CreateHandle(args[i], true);
@@ -667,6 +775,9 @@ type
         if StringAsObject then
           exit WebAssemblyCalls.CreateInteger(Integer(InternalCalls.Cast(aVal)));
         {var lPtr := InternalCalls.Cast(aVal);} var lObject := EcmaScriptObject(aVal); {lObject['__elements_handle'] := NativeInt(lPtr);} exit WebAssemblyCalls.CloneHandle(lObject.Handle);
+      end;
+      if aVal is DateTime then begin
+        exit WebAssemblyCalls.CreateDate((DateTime(aVal).Ticks - new DateTime(1970, 1, 1, 0, 0, 0, 0).Ticks) / 10000);
       end;
       if aVal is Integer then exit WebAssemblyCalls.CreateInteger(aVal as Integer);
       if aVal is NativeInt then exit WebAssemblyCalls.CreateInteger(aVal as NativeInt);
@@ -725,20 +836,22 @@ type
     begin
       var lData := new IntPtr[length(aArgs)];
       for i: Integer := 0 to length(aArgs) -1 do
-        lData[i] := WebAssembly.CreateHandle(aArgs[i], true);
+        lData[i] := WebAssembly.CreateHandle(aArgs[i]);
       var lArgs := if length(lData) > 0 then @lData[0] else nil;
       var c := WebAssemblyCalls.ReflectConstruct(aClassName, lArgs, lData.Length);
       exit new EcmaScriptObject(c);
     end;
   end;
 
-  WebAssemblyType = public enum (Null, Undefined, String, Number, &Function, Symbol, Object, Boolean);
+  WebAssemblyType = public enum (Null, Undefined, String, Number, &Function, Symbol, Object, Boolean, Date = 10);
 
   ExternalCalls = public static class
   private
   public
     [SymbolName('elements_webassembly_current_exception')]
     class var CurrentException: Exception;
+    [SymbolName('llvm.wasm.throw')]
+    class method InternalThrow(aCode: Int32; aValue: ^Void); external;
     [SymbolName('llvm.trap')]
     class method trap; external;
     method RaiseException(aRaiseAddress: ^Void; aRaiseFrame: ^Void; aRaiseObject: Object);
@@ -746,14 +859,28 @@ type
       CurrentException := Exception(aRaiseObject);
       IntRaiseException(aRaiseAddress, aRaiseFrame, aRaiseObject);
     end;
+    {$IFDEF WASMEH}
     [SymbolName('ElementsRaiseException'), Used, DllExport]
     method IntRaiseException(aRaiseAddress: ^Void; aRaiseFrame: ^Void; aRaiseObject: Object);
     begin
-      // Not supported atm!
+      InternalThrow(0, InternalCalls.Cast(aRaiseObject));
+    end;
+    {$ELSE}
+    [SymbolName('ElementsRaiseException'), Used, DllExport]
+    method IntRaiseException(aRaiseAddress: ^Void; aRaiseFrame: ^Void; aRaiseObject: Object);
+    begin
       var s: ^Char := 'Fatal exception in WebAssembly!';
       WebAssemblyCalls.ConsoleLog(s, wcslen(s));
       writeLn('Exception: '+aRaiseObject);
       trap;
+    end;
+    {$ENDIF}
+
+
+    [SymbolName('_Unwind_CallPersonality')]
+    class method _Unwind_CallPersonality(ex: ^Void): Integer; public;
+    begin
+
     end;
 
     [SymbolName('__island_call_delegate'), Used, DllExport]
@@ -786,6 +913,7 @@ type
       end;
     end;
 
+    [SymbolName('strlen')]
     method strlen(c: ^AnsiChar): Integer;
     begin
       if c = nil then exit 0;
@@ -853,6 +981,7 @@ type
     [DLLExport]
     method memset(ptr: ^Void; value: Integer; aNum: NativeInt): ^Void;
     begin
+      result := ptr;
       value := value and $FF;
       var vval: UInt64 := value or (value shl 8) or (value shl 16) or (value shl 24);
       vval := vval or (vval shl 32);
@@ -914,6 +1043,40 @@ type
   rtl.size_t = IntPtr;
   var MAllocInitialized: Boolean; assembly;
 
+  [SymbolName('exit')]
+  method __exit(status: Integer); public;
+  begin
+    writeLn('Exit called: '+status);
+    ExternalCalls.trap;
+  end;
+
+  var Stackbase: Integer;
+  [SymbolName('__island_stack_base')]
+  method GetStackBase: Integer;
+  begin
+    exit Stackbase;
+  end;
+
+  [SymbolNameAttribute('_setjmp')]
+  method setjmp(val: ^Void): Integer; empty;
+
+  [SymbolNameAttribute('vsnprintf')]
+  method __vsnprintf(a,b,c,d: Integer): Integer; empty;
+  [SymbolName('atoi')]
+  method atoi(a: ^AnsiChar): Integer; empty; // used by GC but since getenv never returns a value, this will never hit
+  [SymbolName('atol')]
+  method atol(a: ^AnsiChar): Integer; empty; // used by GC but since getenv never returns a value, this will never hit
+  [SymbolName('strtoul')]
+  method strtoul(a: ^AnsiChar; endptr: ^^AnsiChar; abase: Integer): Cardinal; empty; // used by GC but since getenv never returns a value, this will never hit
+  [SymbolName('_strtoui64')]
+  method _strtoui64(a: ^AnsiChar; endptr: ^^AnsiChar; abase: Integer): UInt64; empty; // used by GC but since getenv never returns a value, this will never hit
+
+  [SymbolName('abort')]
+  method __abort(); public;
+  begin
+    ExternalCalls.trap;
+  end;
+/*
   [SymbolName('malloc')]
   method malloc(size: rtl.size_t): ^Void; public;
   begin
@@ -927,8 +1090,73 @@ type
       rpmalloc.rpmalloc_initialize();
     end;
     exit rpmalloc.rpmalloc(size);
+  end;*/
+  var errno: Integer;
+  [SymbolNameAttribute('__errno_location')]
+   method __errno_location(): ^Integer;
+  begin
+    exit @errno;
   end;
 
+  [SymbolName('__initialize_GC'), DllExport]
+  method InitGC;
+  begin
+    var i: Integer;
+    Stackbase := Integer(@i);
+    WebAssemblyCalls.ConsoleLog(Stackbase);
+    BoehmGC.LoadGC();
+  end;
+
+  [SymbolName('clock')]
+  method Clock: Integer; empty;
+  [SymbolName('write')]
+  method Write(a,b,c,d: Integer): Integer; begin ExternalCalls.trap; end;
+  [SymbolName('atexit')]
+    //{$ENDIF}
+  method atexit(func: ^Void): ^Void; empty; // not triggered for WASM
+  [SymbolName('getenv')]
+  method __GetEnv(increment: Integer): ^Byte; empty;
+
+
+
+  var LastPtr: ^Byte;
+  var SpaceLeft: Integer;
+  [SymbolName('sbrk')]
+  method srbk(size: Integer): ^Void; public;
+  begin
+    if size = 0 then begin
+      if LastPtr = nil then exit ^Void(WebAssemblyCalls.MemorySize(0) * 65536);
+      exit LastPtr;
+    end;
+    if LastPtr = nil then begin
+      var lNew := ((size + 65535) / 65536);
+      LastPtr := ^Byte(WebAssemblyCalls.GrowMemory(0, lNew)  * 65536);
+      SpaceLeft := ((size + 65535) / 65536) * 65536;
+    end else if size > SpaceLeft then begin
+      var lNew := (size - SpaceLeft + 65535) / 65536;
+      WebAssemblyCalls.GrowMemory(0, lNew);
+      SpaceLeft := SpaceLeft + (lNew * 65536);
+    end;
+    assert(size <= SpaceLeft);
+    result := LastPtr;
+    LastPtr := LastPtr + size;
+    SpaceLeft := SpaceLeft - size;
+  end;
+    /**
+    size := (size + 65535) / 65536 * 65536;
+    WebAssemblyCalls.ConsoleLog('srbk', 4);
+    WebAssemblyCalls.ConsoleLog(size);
+    if size = 0 then begin
+      result := ^Void(WebAssemblyCalls.MemorySize(0) * 65536);
+      WebAssemblyCalls.ConsoleLog(Integer(result));
+      exit;
+    end;
+    size := size / 65536;
+    result := ^Void(WebAssemblyCalls.GrowMemory(0, size) * 65536);
+    WebAssemblyCalls.ConsoleLog(Integer(result));
+  end;
+    */
+/*
   [SymbolName('free')]
   method free(v: ^Void); public;
   begin
@@ -938,6 +1166,18 @@ type
       rpmalloc.rpmalloc_initialize;
     end;
     rpmalloc.rpfree(v);
+  end;
+*/
+  [SymbolName('free')]
+  method free(v: ^Void); public;
+  begin
+    gc.gc_free(v);
+  end;
+
+  [SymbolName('alloc')]
+  method malloc(x: Integer): ^Void; public;
+  begin
+    exit gc.gc_malloc(x);
   end;
 
   [SymbolName('__elements_get_stack_pointer'), Used, DllExport]

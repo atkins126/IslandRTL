@@ -6,6 +6,8 @@
     <SharedGUID>8BE19C06-DD7E-41F7-954B-6D269C087E4C</SharedGUID>
     <Import_RootNamespace>Island.Shared.elements</Import_RootNamespace>
     <ProjectGuid>{8BE19C06-DD7E-41F7-954B-6D269C087E4C}</ProjectGuid>
+    <RootNamespace>RemObjects.Elements.System</RootNamespace>
+    <DefaultLanguage>Oxygene</DefaultLanguage>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="$(MSBuildThisFileDirectory)Attributes.pas" />
@@ -56,7 +58,7 @@
     <Compile Include="Math.pas" />
     <Compile Include="Object.pas" />
     <Compile Include="String.pas" />
-    <Compile Include="Type.pas" />
+    <Compile Include="$(MSBuildThisFileDirectory)Reflection\Reflection.pas" />
     <Compile Include="Types.pas" />
     <Compile Include="Array.pas" />
     <Compile Include="Thread.pas" />
@@ -93,6 +95,12 @@
     <Compile Include="$(MSBuildThisFileDirectory)Range.pas" />
     <Compile Include="$(MSBuildThisFileDirectory)Resources.pas" />
     <Compile Include="$(MSBuildThisFileDirectory)Memory.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)DateParser.pas" />
+    <Compile Include="$(MSBuildThisFileDirectory)DateFormatter.pas" />
+    <Compile Include="$(MSBuildThisFileDirectory)Bridges.Delphi.pas" />
+    <Compile Include="$(MSBuildThisFileDirectory)List.Extensions.pas" />
+    <Folder Include="$(MSBuildThisFileDirectory)Reflection" />
+    <Compile Include="$(MSBuildThisFileDirectory)Reflection\Type.pas" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Streams">

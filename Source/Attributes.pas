@@ -263,7 +263,7 @@ type
     constructor(); empty;
   end;
 
-  [AttributeUsage(AttributeTargets.Interface, AllowMultiple := false)]
+  [AttributeUsage(AttributeTargets.Interface or AttributeTargets.Class or AttributeTargets.Delegate or AttributeTargets.Enum or AttributeTargets.Struct, AllowMultiple := false)]
   GuidAttribute = public class(Attribute)
   private
     fGuid: Guid;
@@ -406,5 +406,12 @@ type
     property &Type: &Type; readonly;
     property CheckType: String; readonly;
   end;
+
+  [AttributeUsage(AttributeTargets.Method)]
+  WrapperAttribute = public class(Attribute)
+  public
+    constructor; empty;
+  end;
+
 
 end.

@@ -137,6 +137,30 @@ export module ElementsWebAssembly {
             ReleaseReference(old['__elements_handle']);
     }
 
+    export function WrapTask(ptr: number): Promise<any> {
+        let handle: any
+        let obj = {
+            reject: undefined,
+            resolve: undefined,
+
+            failed: (e) => {
+                releaseHandle(handle)
+                obj.reject(e)
+            },
+            finished: (v) => {
+                releaseHandle(handle)
+                obj.resolve(v)
+            }
+        }
+        handle = createHandle(obj)
+        let prom = new Promise((res, rej) => {
+            obj.resolve = res;
+            obj.reject = rej;
+        })
+        result.instance.exports["__island_task_wrap"](handle, ptr)
+        return prom;
+    }
+
     export function getHandleValue(handle: number): any 
     {
         if (!handle || handle == 0) return null;
@@ -281,6 +305,10 @@ export module ElementsWebAssembly {
             
             return str.length;
         };
+
+        imp.env.__island_wraptask = function(obj: number): number {
+            return createHandle(WrapTask(obj));
+        }
         
         imp.env.__island_consolelog = function(str, len: number) 
         {
@@ -312,11 +340,20 @@ export module ElementsWebAssembly {
                 case 'number': return 3;
                 case 'function': return 4;
                 case 'symbol': return 5;
-                case 'object': return 6;
+                case 'object': {
+                    if (Object.prototype.toString.call(ht) === "[object Date]")
+                    {
+                        return 10;
+                    }
+                    return 6;
+                }
                 case 'boolean': return 7;
                 default:
                     return -1;
             }
+        };
+        imp.env.__island_create_date = function(val: number): number {
+            return createHandle(new Date(Number(val)))
         };
         imp.env.__island_get_intvalue = function(handle: number): number {
             return handletable[handle];
@@ -416,6 +453,14 @@ export module ElementsWebAssembly {
         imp.env.__island_require = function(name: number): number {
             var obj = [];
             return createHandle(require(readStringFromMemory(name)));
+        };
+        imp.env.__island_copy_from_array = function (targetOff: number, inputArray: number, inputOffset: number, size: number) 
+        {
+            new Uint8Array(mem.buffer, targetOff, size).set(getHandleValue(inputArray).slice(inputOffset, size + inputOffset));
+        };
+        imp.env.__island_copy_to_array = function (inputOff: number, targetArray: number, targetOffset: number, size: number) 
+        {
+            getHandleValue(targetArray).set(new Uint8Array(mem.buffer, inputOff, size), targetOffset);
         };
         imp.env.__island_setTimeout = function(fn, timeout: number): number {
             return glob.setTimeout(createDelegate(fn), timeout);

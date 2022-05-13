@@ -25,6 +25,7 @@ type
     [DelayLoadDllImport('libswiftCore.dylib', '$sSS9UTF16ViewVys6UInt16VSS5IndexVcig'), CallingConvention(CallingConvention.Swift)]
     class method UTF16GetChar(aIndex: Int64; aVal1: UInt64; aVal2: ^Void): Char; external;
   end;
+
   //[Swift]
   [SwiftFixedLayout]
   UnicodeScalarView nested in SwiftString = public record
@@ -34,8 +35,8 @@ type
     _countAndFlagsBits: UInt64;
     _object: ^Void;
   {$SHOW H8}
-
   end;
+
   [SwiftFixedLayout]
   UTF32View nested in SwiftString= public record
   public
@@ -59,6 +60,7 @@ type
     [DelayLoadDllImport('libswiftCore.dylib', '$sSS9UTF16ViewVys6UInt16VSS5IndexVcig'), CallingConvention(CallingConvention.Swift)]
     class method UTF16GetChar(aIndex: Int64; aVal1: UInt64; aVal2: ^Void): Char; external;
   end;
+
   [SwiftFixedLayout]
   UTF8View nested in SwiftString = public record
   public
@@ -82,6 +84,7 @@ type
     [DelayLoadDllImport('libswiftCore.dylib', '$sSS9UTF16ViewVys6UInt16VSS5IndexVcig'), CallingConvention(CallingConvention.Swift)]
     class method UTF16GetChar(aIndex: Int64; aVal1: UInt64; aVal2: ^Void): Char; external;
   end;
+
   [SwiftFixedLayout]
   SwiftString = public record
   private
@@ -140,7 +143,7 @@ type
       var lView := __UTF16View(_countAndFlagsBits, _object);
       var lCount := UTF16View.UTF16Count(lView._countAndFlagsBits, lView._object);
       var lVal := new Char[lCount];
-      if lVal.Length = 0 then exit 0;
+      if lVal.Length = 0 then exit nil;
       var lFirst := UTF16View.UTF16FirstIndex(lView._countAndFlagsBits, lView._object);
       lVal[0] := UTF16View.UTF16GetChar(lFirst, lView._countAndFlagsBits, lView._object);
       for i: Integer := 1 to lCount -1 do begin
@@ -173,6 +176,5 @@ type
     end;
 
   end;
-
 
 end.

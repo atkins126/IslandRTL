@@ -2,6 +2,11 @@
 
 interface
 
+{$IF DARWIN}
+uses
+  CoreFoundation;
+{$ENDIF}
+
 type
   TimeZone = public class
   private
@@ -31,7 +36,6 @@ type
 
 implementation
 
-{$IFDEF WEBASSEMBLY}[Warning("Not Implemented for WebAssembly")]{$ENDIF}
 class method TimeZone.get_LocalTimeZone: not nullable TimeZone;
 begin
   {$IFDEF WINDOWS}
@@ -45,6 +49,19 @@ begin
   var lTimeZone: ^rtl.__struct_tm;
   lTimeZone := rtl.localtime(@lTime);
   result := new TimeZone(String.FromPAnsiChars(lTimeZone^.tm_zone), lTimeZone^.tm_gmtoff div 60);
+  {$ELSEIF DARWIN}
+  var lTimeZone := CFTimeZoneCopyDefault;
+  var lName := CFTimeZoneGetName(lTimeZone);
+  var lString: String := bridge<Foundation.NSString>(CFStringRef(lName));
+  var lInterval := CFTimeZoneGetSecondsFromGMT(lTimeZone, CFAbsoluteTimeGetCurrent);
+  result := new TimeZone(lString, Integer(Math.Round(lInterval div 60)));
+  CFRelease(lTimeZone);
+  {$ELSEIF WEBASSEMBLY}
+  var lDate := WebAssembly.ReflectConstruct('Date', []);
+  var lOffset: Integer := lDate.getTimezoneOffset();
+  var lDateFormat := WebAssembly.ReflectConstruct("Intl.DateTimeFormat", ['default']);
+  var usedOptions: String := lDateFormat.resolvedOptions().timeZone;
+  result := new TimeZone(usedOptions, lOffset);
   {$ELSE}
   result := new TimeZone('', 0);
   {$ENDIF}
@@ -92,6 +109,14 @@ begin
   {$ELSEIF LINUX OR ANDROID}
   var lList: not nullable List<String> := new List<String>();
   GetZoneNames(DefaultZonesDir, lList, '');
+  result := lList;
+  {$ELSEIF DARWIN}
+  var lAllTimeZones := CFTimeZoneCopyKnownNames;
+  var lArray: NSArray := bridge<Foundation.NSArray>(CFArrayRef(lAllTimeZones));
+  var lList: not nullable List<String> := new List<String>();
+  for lString: NSString in lArray do
+    lList.Add(lString);
+  CFRelease(lAllTimeZones);
   result := lList;
   {$ELSE}
   result := new String[1];
@@ -165,6 +190,15 @@ begin
     else
       rtl.setenv(@lNameBytes[0], lOldValue, 1);
   end;
+  {$ELSEIF DARWIN}
+  var lNew := CFTimeZoneCreateWithName(nil, aName, true);
+  if lNew ≠ nil then begin
+    var lNewInterval := CFTimeZoneGetSecondsFromGMT(lNew, CFAbsoluteTimeGetCurrent);
+    result := new TimeZone(aName, Integer(Math.Round(lNewInterval div 60)));
+    CFRelease(lNew);
+  end
+  else
+    result := new TimeZone(' ' , 0);
   {$ELSE}
   result := new TimeZone(' ' , 0);
   {$ENDIF}

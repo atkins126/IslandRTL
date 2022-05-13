@@ -1,6 +1,6 @@
 ﻿namespace RemObjects.Elements.System;
 
-{$IF NOT WEBASSEMBLY}
+{$IF NOT WEBASSEMBLY AND NOT FUCHSIA}
 
 interface
 
@@ -304,7 +304,7 @@ begin
   var lString := ipString;
   var lBytes := new Byte[16];
 
-  {$IF POSIX OR DARWIN}
+  {$IF POSIX}
   var lAddrInfo: ^rtl.__struct_addrinfo;
   var lSockAddr: ^rtl.__struct_sockaddr_in6;
   var lRes := 0;
@@ -327,6 +327,8 @@ begin
     lBytes[i] := lSockAddr^.sin6_addr.in6_u.u6_addr8[i];
     {$ELSEIF DARWIN}
     lBytes[i] := lSockAddr^.sin6_addr.__u6_addr.__u6_addr8[i];
+    {$ELSEIF FUCHSIA}
+    {$WARNING Not Implememnted for Fuchsia yet}
     {$ELSEIF POSIX}
     lBytes[i] := lSockAddr^.sin6_addr.__in6_u.__u6_addr8[i];
     {$ELSE}
@@ -392,6 +394,8 @@ begin
   IPEndPointToNative(lEndPoint, out lSockAddr4, out lSockAddr6, out lPointer, out lSize);
   if rtl.getnameinfo(^rtl.SOCKADDR(lPointer), lSize, @lName[0], 255, @lService[0], 255, 0) = 0 then
     lHostName := String.FromPChar(@lName[0])
+  {$ELSEIF FUCHSIA}
+  {$WARNING Not Implememnted for Fuchsia yet}
   {$ELSEIF POSIX}
   var lSockAddr4: rtl.__struct_sockaddr_in;
   var lSockAddr6: rtl.__struct_sockaddr_in6;
@@ -443,6 +447,8 @@ begin
     end;
     lPtr := rtl.PADDRINFOW(lPtr^.ai_next);
   end;
+  {$ELSEIF FUCHSIA}
+  {$WARNING Not Implememnted for Fuchsia yet}
   {$ELSEIF POSIX}
   var lAddrInfo: ^rtl.__struct_addrinfo;
   var lSockAddr4: ^rtl.__struct_sockaddr_in;
@@ -539,7 +545,7 @@ begin
 end;
 {$ENDIF}
 
-{$IF POSIX OR DARWIN}
+{$IF POSIX}
 method IPEndPointToNative(endPoint: IPEndPoint; out lIPv4: rtl.__struct_sockaddr_in; out lIPv6: rtl.__struct_sockaddr_in6; out ipPointer: ^Void; out ipSize: Integer);
 begin
   case endPoint.AddressFamily of
@@ -557,6 +563,8 @@ begin
         lIPv6.sin6_addr.__u6_addr.__u6_addr8[i] := lBytes[i];
         {$ELSEIF ANDROID}
         lIPv6.sin6_addr.in6_u.u6_addr8[i] := lBytes[i];
+        {$ELSEIF FUCHSIA}
+        {$WARNING Not Implememnted for Fuchsia yet}
         {$ELSEIF POSIX}
         lIPv6.sin6_addr.__in6_u.__u6_addr8[i] := lBytes[i];
         {$ENDIF}
@@ -626,12 +634,12 @@ begin
   AddressFamily := anAddressFamily;
   SocketType := aSocketType;
   ProtocolType := aProtocol;
-  {$IF POSIX OR DARWIN}
+  {$IF POSIX_LIGHT}
   fHandle := rtl.socket(rtl.int32_t(anAddressFamily), rtl.int32_t(aSocketType), rtl.int32_t(aProtocol));
-  {$ELSEIF ISLAND AND WINDOWS}
-  fHandle := rtl.__Global.socket(rtl.INT(anAddressFamily), rtl.INT(aSocketType), rtl.INT(aProtocol));
+  {$ELSEIF WINDOWS}
+  fHandle := rtl.socket(rtl.INT(anAddressFamily), rtl.INT(aSocketType), rtl.INT(aProtocol));
   {$ELSE}
-  {$ERROR}
+  {$ERROR Unsupported platform}
   {$ENDIF}
 
   if fHandle < 0 then
@@ -663,7 +671,7 @@ begin
     lEndPoint := new IPEndPoint(IPAddress.Parse("0.0.0.0"), lEndPoint.Port);
   var lPointer: ^Void;
   var lSize: Integer;
-  {$IF POSIX OR DARWIN}
+  {$IF POSIX}
   var lIPv4: rtl.__struct_sockaddr_in;
   var lIPv6: rtl.__struct_sockaddr_in6;
   {$IF POSIX AND (NOT (ANDROID OR DARWIN))}
@@ -678,7 +686,7 @@ begin
   {$IF POSIX AND (NOT (ANDROID OR DARWIN))}
   lSockAddr.__sockaddr__ := ^rtl.__struct_sockaddr(lPointer);
   lSockAddr.__sockaddr_in__ := ^rtl.__struct_sockaddr_in(lPointer);
-  if rtl.__Global.bind(fHandle, lSockAddr, lSize) <> 0 then
+  if rtl.bind(fHandle, lSockAddr, lSize) <> 0 then
     raise new Exception("Error calling bind function");
   {$ELSEIF DARWIN OR ANDROID}
   if rtl.bind(fHandle, ^rtl.__struct_sockaddr(lPointer), lSize) <> 0 then
@@ -696,7 +704,7 @@ begin
   var lPointer: ^Void;
   var lSize: Integer;
 
-  {$IF POSIX OR DARWIN}
+  {$IF POSIX}
   var lIPv4: rtl.__struct_sockaddr_in;
   var lIPv6: rtl.__struct_sockaddr_in6;
   {$IF POSIX AND (NOT (ANDROID OR DARWIN))}
@@ -823,6 +831,8 @@ begin
       {$ENDIF}
     aIPEndPoint.Address := new IPAddress(lBytes, lSockAddrIn6^.sin6_scope_id);
   end;
+  {$ELSEIF FUCHSIA}
+  {$WARNING Not Implememnted for Fuchsia yet}
   {$ELSEIF POSIX AND NOT DARWIN}
   var lSockAddrIn: ^rtl.__struct_sockaddr_in := ^rtl.__SOCKADDR_ARG(aBuffer)^.__sockaddr_in__;
   if lSockAddrIn^.sin_family = rtl.USHORT(AddressFamily.InterNetwork) then begin
@@ -886,7 +896,7 @@ begin
   var lEndPoint := IPEndPoint(remoteEP);
   var lPointer: ^Void;
   var lSize: Integer;
-  {$IF POSIX OR DARWIN OR ANDROID}
+  {$IF POSIX}
   var lSockAddr4: rtl.__struct_sockaddr_in;
   var lSockAddr6: rtl.__struct_sockaddr_in6;
   IPEndPointToNative(lEndPoint, out lSockAddr4, out lSockAddr6, out lPointer, out lSize);
@@ -914,7 +924,7 @@ method Socket.DataAvailable: Integer;
 begin
   var lData: rtl.u_long := 0;
   var lError := false;
-  {$IF POSIX OR DARWIN}
+  {$IF POSIX}
   const FIONREAD: Int32 = 1074004095;
   lError := rtl.ioctl(fHandle, FIONREAD, @lData) < 0;
   {$ELSE}
@@ -962,7 +972,7 @@ end;
 
 method Socket.Close;
 begin
-  {$IF POSIX OR DARWIN}
+  {$IF POSIX}
   if rtl.close(fHandle) <> 0 then
     raise new Exception("Error closing socket");
   {$ELSE}

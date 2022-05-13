@@ -75,7 +75,6 @@ type
 
   end;
 
-
   [Island]
   IIslandGetCocoaWrapper = public interface
   method «$__CreateCocoaWrapper»: Foundation.NSObject;
@@ -91,17 +90,8 @@ type
   end;
 
 
-  operator Implicit<T>(aIn: NSArray<T>): sequence of T; public;
-  begin
-    exit INSFastEnumeration<T>(aIn).GetSequence;
-  end;
-
-  operator Implicit<T>(aIn: NSMutableArray<T>): sequence of T; public;
-  begin
-    exit INSFastEnumeration<T>(aIn).GetSequence;
-  end;
-
   extension method INSFastEnumeration<T>.GetSequence<T>: sequence of T; iterator; public;
+  where T is unconstrained;
   begin
     var lState: NSFastEnumerationState;
     var lDest: array[0..3] of T;
@@ -114,12 +104,21 @@ type
     end;
   end;
 
-  extension method INSFastEnumeration.GetSequence: sequence of id; public;
+  extension method INSFastEnumeration.GetSequence: sequence of id; public; iterator;
   begin
-    exit INSFastEnumeration<id>(self).GetSequence;
+    var lState: NSFastEnumerationState;
+    var lDest: array[0..3] of id;
+    loop begin
+      var n := self.countByEnumeratingWithState(@lState) objects(@lDest) count(4);
+      if n = 0 then break;
+      for i: Integer := 0 to n -1 do begin
+        yield(id(lState.itemsPtr[i]));
+      end;
+    end;
   end;
+
 type
-  NSFastExtByte = public extension class(INSFastEnumeration<nullable not nullable Byte>)
+  NSFastExtByte = public extension class(INSFastEnumeration<not nullable NSNumber<Byte>>)
   public
 
     method GetSequence: sequence of Byte; iterator;
@@ -129,8 +128,7 @@ type
     end;
   end;
 
-
-  NSFastExtSByte = public extension class(INSFastEnumeration<nullable not nullable SByte>)
+  NSFastExtSByte = public extension class(INSFastEnumeration<not nullable NSNumber<SByte>>)
   public
 
     method GetSequence: sequence of Byte; iterator;
@@ -140,7 +138,7 @@ type
     end;
   end;
 
-  NSFastExtInt16 = public extension class(INSFastEnumeration<nullable not nullable Int16>)
+  NSFastExtInt16 = public extension class(INSFastEnumeration<not nullable NSNumber<Int16>>)
   public
 
     method GetSequence: sequence of Byte; iterator;
@@ -150,8 +148,7 @@ type
     end;
   end;
 
-
-  NSFastExtUInt16 = public extension class(INSFastEnumeration<nullable not nullable UInt16>)
+  NSFastExtUInt16 = public extension class(INSFastEnumeration<not nullable NSNumber<UInt16>>)
   public
 
     method GetSequence: sequence of Byte; iterator;
@@ -161,9 +158,7 @@ type
     end;
   end;
 
-
-
-  NSFastExtInt32 = public extension class(INSFastEnumeration<nullable not nullable Int32>)
+  NSFastExtInt32 = public extension class(INSFastEnumeration<not nullable NSNumber<Int32>>)
   public
 
     method GetSequence: sequence of Byte; iterator;
@@ -173,8 +168,7 @@ type
     end;
   end;
 
-
-  NSFastExtUInt32 = public extension class(INSFastEnumeration<nullable not nullable UInt32>)
+  NSFastExtUInt32 = public extension class(INSFastEnumeration<not nullable NSNumber<UInt32>>)
   public
 
     method GetSequence: sequence of Byte; iterator;
@@ -184,8 +178,7 @@ type
     end;
   end;
 
-
-  NSFastExtInt64 = public extension class(INSFastEnumeration<nullable not nullable Int64>)
+  NSFastExtInt64 = public extension class(INSFastEnumeration<not nullable NSNumber<Int64>>)
   public
 
     method GetSequence: sequence of Byte; iterator;
@@ -195,8 +188,7 @@ type
     end;
   end;
 
-
-  NSFastExtUInt64 = public extension class(INSFastEnumeration<nullable not nullable UInt64>)
+  NSFastExtUInt64 = public extension class(INSFastEnumeration<not nullable NSNumber<UInt64>>)
   public
 
     method GetSequence: sequence of Byte; iterator;
@@ -205,7 +197,6 @@ type
         yield UInt64(el);
     end;
   end;
-
 
 [Obsolete("Use ToNSArray() instead")]
 extension method Foundation.INSFastEnumeration.array: not nullable NSArray; public; inline;
@@ -222,7 +213,12 @@ begin
   exit lRes;
 end;
 
-type IDBlock = public block(aItem: not nullable id): id;
+extension method INSFastEnumeration.Cast<T>(): sequence of T; iterator;
+begin
+  for each el in self do
+    yield el as T;
+end;
+
 
 extension method Foundation.INSFastEnumeration.dictionary(aKeyBlock: IDBlock; aValueBlock: IDBlock): not nullable NSDictionary; public;
 begin
@@ -231,7 +227,6 @@ begin
   for each i in lArray do
     NSMutableDictionary(result)[aKeyBlock(i)] := aValueBlock(i);
 end;
-
 
 extension method IEnumerable<T>.array<T>: not nullable NSArray<T>; public;
 begin
@@ -243,39 +238,40 @@ begin
 end;
 
 extension method INSFastEnumeration<T>.Count(): Integer; public;
+where T is NSObject;
 begin
-  exit self.GetSequence.Count;
+  exit self.GetSequence<T>().Count;
 end;
 
 extension method INSFastEnumeration<T>.Count(aCond: not nullable block(aItem: not nullable T): Boolean): Integer; public;
+where T is NSObject;
 begin
-  exit self.GetSequence.Count(aCond);
+  exit self.GetSequence<T>().Count(aCond);
 end;
 
 extension method INSFastEnumeration<T>.Where(aBlock: not nullable block(aItem: not nullable T): Boolean): sequence of T; public;
+where T is NSObject;
 begin
-  exit self.GetSequence.Where(aBlock);
+  exit self.GetSequence<T>().Where(aBlock);
 end;
-
 
 extension method INSFastEnumeration<T>.Select<T, K>(aBlock: not nullable block(aItem: not nullable T): K): sequence of K; public;
+where T is NSObject;
 begin
-  exit self.GetSequence.Select(aBlock);
+  exit self.GetSequence<T>().Select(aBlock);
 end;
-
 
 extension method INSFastEnumeration<T>.FirstOrDefault<T>(aBlock: not nullable block(aItem: not nullable T): Boolean): T; public;
+where T is NSObject;
 begin
-  exit self.GetSequence.FirstOrDefault(aBlock);
+  exit self.GetSequence<T>().FirstOrDefault(aBlock);
 end;
-
 
 extension method INSFastEnumeration<T>.FirstOrDefault<T>(): T; public;
+where T is NSObject;
 begin
-  exit self.GetSequence.FirstOrDefault();
+  exit self.GetSequence<T>().FirstOrDefault();
 end;
-
-
 
 [SymbolName('__elements_ObjcClassInfoToString'), Used]
 method __elements_ObjcClassInfoToString(clz: &Class): String;
@@ -311,7 +307,6 @@ begin
   end;
   rtl.free(methods);
   sb.EndList;
-
 
   begin
     sb.SelectProperty(false, 'properties');
@@ -369,7 +364,6 @@ begin
 
   clz := objc_getMetaClass(class_getName(clz));
 
-
   sb.SelectProperty(false, 'classMethods');
   sb.StartList;
   methodCount := 0;
@@ -390,7 +384,6 @@ begin
   rtl.free(methods);
   sb.EndList;
 
-
   begin
     sb.SelectProperty(false, 'classProperties');
     sb.StartList;
@@ -410,12 +403,10 @@ begin
     sb.EndList;
   end;
 
-
   sb.EndObject;
 
   exit sb.ToString;
 end;
-
 
 {$ENDIF}
 

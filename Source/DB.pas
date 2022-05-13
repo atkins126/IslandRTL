@@ -94,7 +94,7 @@ type
         using lReader := lResult.ExecuteReader do begin
           var lMap := new Integer[lReader.FieldCount];
           for i: Integer := 0 to lReader.FieldCount -1 do begin
-            lMap[i] := lMapper.FindIndex(a -> a.Name = lReader.FieldName[i]);
+            lMap[i] := lMapper.FindIndex(a -> a.Name.ToLower = lReader.FieldName[i].ToLower);
           end;
           while lReader.Read do begin
             var lRes := new T;
@@ -174,6 +174,8 @@ type
       var lQuoteChar := #0;
       var i := 0;
       while i < aString.Length do begin
+        var callInc := true;
+
         case aString[i] of
           '@': if lQuoteChar <> #0 then lSQ.Append(aString[i]) else begin
             inc(i);
@@ -184,6 +186,7 @@ type
               end else break;
             end;
             lSQ.Append(aReplacer(aString.Substring(lStart, i - lStart)));
+            callInc := false;
           end;
           '"', '`', '''': begin
             if lQuoteChar = aString[i] then lQuoteChar := #0 else
@@ -193,8 +196,12 @@ type
           else
             lSQ.Append(aString[i])
           end;
-        inc(i);
+        if(callInc)then
+        begin
+          inc(i);
+        end;
       end;
+
       exit lSQ.ToString;
     end;
   end;

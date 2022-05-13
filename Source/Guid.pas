@@ -173,10 +173,7 @@ type
       result[15] := Data4_7;
     end;
 
-    class method &Empty: Guid;
-    begin
-      exit new Guid;
-    end;
+    class property &Empty: Guid := new Guid; lazy; readonly;
 
     class method NewGuid: Guid;
     begin
@@ -197,19 +194,21 @@ type
         r.Data4_7 := lg.Data4[7];
         exit r;
       end;
-      {$ELSEIF Posix}
+      {$ELSEIF POSIX_LIGHT}
       var data := new Byte[16];
       Random.CryptoSafeRandom(data, 0, 16);
       data[6] := (data[6] and $0F) or 64; // version 4
       data[8] := data[8] or $80; // variant
       rtl.memcpy(@result, @data[0], 16);
-      {$ELSEIF webassembly}
+      {$ELSEIF WEBASSEMBLY}
       var data := new Byte[16];
       WebAssemblyCalls.CryptoSafeRandom(@data[0], 16);
       data[6] := (data[6] and $0F) or 64; // version 4
       data[8] := data[8] or $80; // variant
       memcpy(@result, @data[0], 16);
-      {$ELSE}{$ERROR}{$ENDIF}
+      {$ELSE}
+      {$ERROR Unsupported platform}
+      {$ENDIF}
     end;
 
     class method Parse(Value: String): Guid;

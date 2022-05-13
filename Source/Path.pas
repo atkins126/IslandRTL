@@ -17,7 +17,7 @@ type
 
     {$IFNDEF NOFILES}
     method GetFullPath(RelativePath: not nullable String): not nullable String;
-    property ListSeparator: Char read {$IFDEF WINDOWS}';'{$ELSEIF POSIX}':'{$ELSE}{$ERROR}{$ENDIF};
+    property ListSeparator: Char read {$IFDEF WINDOWS}';'{$ELSEIF POSIX_LIGHT}':'{$ELSE}{$ERROR Unsupported platform}{$ENDIF};
     {$ENDIF}
 
   end;
@@ -160,10 +160,13 @@ begin
     else
       exit String.FromPChar(@buf1[0],len) as not nullable String;
   end;
-  {$ELSEIF POSIX}
+  {$ELSEIF DARWIN}
+  exit (RelativePath as Foundation.NSString).stringByStandardizingPath as not nullable;
+  {$ELSEIF POSIX_LIGHT}
   {$HINT POSIX: implement Path.GetFullPath}
   exit RelativePath;
-  {$ELSE}{$ERROR}
+  {$ELSE}
+  {$ERROR Unsupported platform}
   {$ENDIF}
 end;
 {$ENDIF}

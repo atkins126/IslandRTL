@@ -8,16 +8,13 @@
     <AllowGlobals>True</AllowGlobals>
     <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
     <TargetFrameworkVersion>v4.0</TargetFrameworkVersion>
-    <Name>Island (Darwin tvOS)</Name>
-    <ProjectGuid>{80E79A08-E879-4706-AF50-311343CB8DE1}</ProjectGuid>
+    <Name>Island (Fuchsia)</Name>
+    <ProjectGuid>{2430EA6F-C750-426D-A87D-A0160F243DC2}</ProjectGuid>
     <Mode>Island</Mode>
     <WarnOnCaseMismatch>True</WarnOnCaseMismatch>
     <Platform Condition="'$(Platform)' == ''">AnyCPU</Platform>
     <GenerateDebugInfo>True</GenerateDebugInfo>
-    <DefineConstants>POSIX;POSIX_LIGHT</DefineConstants>
-    <SDK>tvOS</SDK>
     <DefaultGlobalsToPublic>True</DefaultGlobalsToPublic>
-    <DeploymentTargetVersion>9.0</DeploymentTargetVersion>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
     <OutputPath>Bin\Debug</OutputPath>
@@ -45,23 +42,13 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="BoehmGC.pas" />
-    <Compile Include="Posix_FFI_x64.pas" />
     <Compile Include="ManagedThreadPool.pas" />
     <Compile Include="PosixHelpers.pas" />
-    <Compile Include="DarwinNumbers.pas" />
-    <Compile Include="Swift.pas" />
-    <Compile Include="Posix_FFI_ARM64.pas" />
-    <Compile Include="SwiftString.pas" />
-    <Compile Include="SwiftObject.pas" />
-    <Compile Include="SwiftAny.pas" />
-    <Compile Include="SwiftArray.pas" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="gc" />
     <Reference Include="rtl" />
-    <Reference Include="Foundation" />
-    <Reference Include="CoreFoundation" />
   </ItemGroup>
-  <Import Project="$(MSBuildExtensionsPath)\RemObjects Software\Elements\RemObjects.Elements.Island.Darwin.targets" />
+  <Import Project="$(MSBuildExtensionsPath)\RemObjects Software\Elements\RemObjects.Elements.Island.Fuchsia.targets" />
   <Import Project="Island.Shared.projitems" Label="Shared" />
 </Project>

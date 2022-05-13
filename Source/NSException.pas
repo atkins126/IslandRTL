@@ -29,6 +29,18 @@ type
       InnerException := aException;
     end;
 
+    property Message: String read begin
+      result := if length(InnerException.name) > 0 then
+        InnerException.name+": "+InnerException.reason
+      else
+        InnerException.reason;
+    end; override;
+
+    method ToString: String; override;
+    begin
+      result := "(Wrapped) "+InnerException.class.description+': '+Message;
+    end;
+
     property InnerException: NSException read private write;
 
   end;
@@ -40,6 +52,12 @@ type
     begin
       inherited constructor withName(aException.GetType.Name) reason(aException.Message) userInfo(nil);
       InnerException := aException;
+    end;
+
+    [ToString]
+    method ToString: String; override;
+    begin
+      result := "(Wrapped) "+InnerException.GetType.Name+': '+Message;
     end;
 
     property InnerException: IslandException read private write;

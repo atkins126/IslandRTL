@@ -140,7 +140,7 @@ type
     method ToString: String;
   end;
 
-{$IFDEF POSIX AND NOT ANDROID}
+{$IFDEF POSIX_LIGHT AND NOT ANDROID}
 method iconv_helper(cd: rtl.iconv_t; inputdata: ^AnsiChar; inputdatalength: rtl.size_t; suggestedlength: Integer; out aresult: ^AnsiChar): Integer; public;
 {$ENDIF}
 
@@ -164,7 +164,7 @@ begin
   memcpy(@result.fFirstChar, c, aCharCount * 2);
 end;
 
-{$IFDEF POSIX AND NOT ANDROID}
+{$IFDEF POSIX_LIGHT AND NOT ANDROID}
 method iconv_helper(cd: rtl.iconv_t; inputdata: ^AnsiChar; inputdatalength: rtl.size_t; suggestedlength: Integer; out aresult: ^AnsiChar): Integer;
 begin
   var outputdata := ^AnsiChar(rtl.malloc(suggestedlength));
@@ -204,7 +204,9 @@ begin
   exit Encoding.UTF8.GetString(b);
   {$ELSE}
   var lNewData: ^AnsiChar := nil;
+  {$HIDE W37}
   var lNewLen: rtl.size_t := iconv_helper(TextConvert.fCurrentToUtf16, c, aCharCount, aCharCount * 2 + 5, out lNewData);
+  {$SHOW W37}
   // method iconv_helper(cd: rtl.iconv_t; inputdata: ^AnsiChar; inputdatalength: rtl.size_t;outputdata: ^^AnsiChar; outputdatalength: ^rtl.size_t; suggested_output_length: Integer): Integer;
   if lNewLen <> -1  then begin
     result := String.FromPChar(^Char(lNewData), lNewLen / 2);
@@ -227,8 +229,9 @@ begin
     memcpy(@result[0], @b[0], b.Length);
   {$ELSE}
   var lNewData: ^AnsiChar := nil;
+  {$HIDE W37}
   var lNewLen: rtl.size_t := iconv_helper(TextConvert.fUTF16ToCurrent, ^AnsiChar(@fFirstChar), Length * 2, Length + 5, out lNewData);
-
+  {$SHOW W37}
   if lNewLen <> rtl.size_t(-1)  then begin
     result := new AnsiChar[lNewLen+ if aNullTerminate then 1 else 0];
     if lNewLen <> 0 then
@@ -428,11 +431,15 @@ end;
 
 method String.EqualsIgnoreCase(aOther: String): Boolean;
 begin
+  if aOther = nil then exit false;
+  if aOther.Length <> Length then exit false;
   exit ToLower().Equals(aOther:ToLower());
 end;
 
 method String.EqualsIgnoreCaseInvariant(aOther: String): Boolean;
 begin
+  if aOther = nil then exit false;
+  if aOther.Length <> Length then exit false;
   exit ToLowerInvariant().Equals(aOther:ToLowerInvariant());
 end;
 
@@ -820,7 +827,7 @@ end;
 class method String.FromPAnsiChars(c: ^AnsiChar): nullable String;
 begin
   if not assigned(c) then exit nil;
-  exit FromPAnsiChars(c, {$IFDEF WINDOWS OR WEBASSEMBLY}ExternalCalls.strlen(c){$ELSEIF POSIX}rtl.strlen(c){$ELSE}{$ERROR Not Implemented}{$ENDIF});
+  exit FromPAnsiChars(c, {$IFDEF WINDOWS OR WEBASSEMBLY}ExternalCalls.strlen(c){$ELSEIF POSIX_LIGHT}rtl.strlen(c){$ELSE}{$ERROR Unsupported platform}{$ENDIF});
 end;
 
 class method String.Format(aFormat: not nullable String; params aArguments: not nullable array of Object): String;
@@ -896,7 +903,7 @@ begin
         var sb1 := new StringBuilder;
         if aFormat[cur_pos] = ':' then begin
           inc(cur_pos);
-          while true do begin
+          loop begin
             case aFormat[cur_pos] of
               '{': begin
                     if (cur_pos < aFormat.Length-1) and (aFormat[cur_pos+1] = '{') then begin
@@ -1088,17 +1095,6 @@ begin
   var lTotal := CoreFoundation.CFStringGetLength(lTmp); // need to get converted string length, it can change
   result := String.AllocString(lTotal);
   CoreFoundation.CFStringGetCharacters(lTmp, CoreFoundation.CFRangeMake(0, lTotal), ^rtl.UniChar(@result.fFirstChar));
-  {$ELSEIF POSIX AND NOT ANDROID}
-  var b := Encoding.UTF32LE.GetBytes(self);
-  for i: Int32 := 0 to RemObjects.Elements.System.length(b)-1 step 4 do begin
-    var ch := b[i] + (Int32(b[i+1]) shl 8) + (Int32(b[i+2]) shl 16) + (Int32(b[i+3]) shl 24);
-    var u := rtl.towlower_l(ch, aLocale.PlatformLocale);
-    b[i] := u and $ff;
-    b[i+1] := (u shr 8) and $ff;
-    b[i+2] := (u shr 16) and $ff;
-    b[i+3] := (u shr 24) and $ff;
-  end;
-  result := Encoding.UTF32LE.GetString(b);
   {$ELSEIF ANDROID}
   result := AllocString(self.Length);
   var lErr: UErrorCode;
@@ -1109,6 +1105,29 @@ begin
     if lErr <> UErrorCode.U_ZERO_ERROR then
       raise new Exception('Error calling u_strToLower');
   end;
+  {$ELSEIF FUCHSIA}
+  var b := Encoding.UTF32LE.GetBytes(self);
+  for i: Int32 := 0 to RemObjects.Elements.System.length(b)-1 step 4 do begin
+    var ch := b[i] + (Int32(b[i+1]) shl 8) + (Int32(b[i+2]) shl 16) + (Int32(b[i+3]) shl 24);
+    {$WARNING Does not honor Locale yet}
+    var u := rtl.towlower(ch/*, aLocale.PlatformLocale*/);
+    b[i] := u and $ff;
+    b[i+1] := (u shr 8) and $ff;
+    b[i+2] := (u shr 16) and $ff;
+    b[i+3] := (u shr 24) and $ff;
+  end;
+  result := Encoding.UTF32LE.GetString(b);
+  {$ELSEIF POSIX}
+  var b := Encoding.UTF32LE.GetBytes(self);
+  for i: Int32 := 0 to RemObjects.Elements.System.length(b)-1 step 4 do begin
+    var ch := b[i] + (Int32(b[i+1]) shl 8) + (Int32(b[i+2]) shl 16) + (Int32(b[i+3]) shl 24);
+    var u := rtl.towlower_l(ch, aLocale.PlatformLocale);
+    b[i] := u and $ff;
+    b[i+1] := (u shr 8) and $ff;
+    b[i+2] := (u shr 16) and $ff;
+    b[i+3] := (u shr 24) and $ff;
+  end;
+  result := Encoding.UTF32LE.GetString(b);
   {$ENDIF}
 end;
 
@@ -1126,17 +1145,6 @@ begin
   var lTotal := CoreFoundation.CFStringGetLength(lTmp);
   result := String.AllocString(lTotal);
   CoreFoundation.CFStringGetCharacters(lTmp, CoreFoundation.CFRangeMake(0, lTotal), ^rtl.UniChar(@result.fFirstChar));
-  {$ELSEIF POSIX AND NOT ANDROID}
-  var b := Encoding.UTF32LE.GetBytes(self);
-  for i: Int32 := 0 to RemObjects.Elements.System.length(b)-1 step 4 do begin
-    var ch := b[i] + (Int32(b[i+1]) shl 8) + (Int32(b[i+2]) shl 16) + (Int32(b[i+3]) shl 24);
-    var u := rtl.towupper_l(ch, aLocale.PlatformLocale);
-    b[i] := u and $ff;
-    b[i+1] := (u shr 8) and $ff;
-    b[i+2] := (u shr 16) and $ff;
-    b[i+3] := (u shr 24) and $ff;
-  end;
-  result := Encoding.UTF32LE.GetString(b);
   {$ELSEIF ANDROID}
   result := AllocString(self.Length);
   var lErr: UErrorCode;
@@ -1147,6 +1155,29 @@ begin
     if lErr <> UErrorCode.U_ZERO_ERROR then
       raise new Exception('Error calling u_strToLower');
   end;
+  {$ELSEIF FUCHSIA}
+  var b := Encoding.UTF32LE.GetBytes(self);
+  for i: Int32 := 0 to RemObjects.Elements.System.length(b)-1 step 4 do begin
+    var ch := b[i] + (Int32(b[i+1]) shl 8) + (Int32(b[i+2]) shl 16) + (Int32(b[i+3]) shl 24);
+    {$WARNING Does not honor Locale yet}
+    var u := rtl.towupper(ch/*, aLocale.PlatformLocale*/);
+    b[i] := u and $ff;
+    b[i+1] := (u shr 8) and $ff;
+    b[i+2] := (u shr 16) and $ff;
+    b[i+3] := (u shr 24) and $ff;
+  end;
+  result := Encoding.UTF32LE.GetString(b);
+  {$ELSEIF POSIX}
+  var b := Encoding.UTF32LE.GetBytes(self);
+  for i: Int32 := 0 to RemObjects.Elements.System.length(b)-1 step 4 do begin
+    var ch := b[i] + (Int32(b[i+1]) shl 8) + (Int32(b[i+2]) shl 16) + (Int32(b[i+3]) shl 24);
+    var u := rtl.towupper_l(ch, aLocale.PlatformLocale);
+    b[i] := u and $ff;
+    b[i+1] := (u shr 8) and $ff;
+    b[i+2] := (u shr 16) and $ff;
+    b[i+3] := (u shr 24) and $ff;
+  end;
+  result := Encoding.UTF32LE.GetString(b);
   {$ENDIF}
 end;
 

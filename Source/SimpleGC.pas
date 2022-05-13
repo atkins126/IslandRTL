@@ -193,17 +193,14 @@ type
       end;
     end;
     {$ELSEIF WEBASSEMBLY}
-    //[SymbolName('__stack_start')]
-    class var StackTop: IntPtr; 
+    class var StackTop: ^IntPtr;
 
-    
     class method CheckThread;
     begin
       // in wasm; we can take the address of any var here and get the stack top.
       var lCurrentStackTop: ^IntPtr;
-      var lEnd := @StackTop;
+      var lEnd := StackTop;
       lCurrentStackTop := ^IntPtr(@lCurrentStackTop);
-      Debug('checkthread');
       while lCurrentStackTop < lEnd do begin
         var lCurrent := lCurrentStackTop^;
         if fGlobalFreeList.Contains(lCurrent) then begin
@@ -244,7 +241,7 @@ type
     class method GCLoop(dummy: Object);
     begin
       RegisterThread;
-      while true do begin
+      loop begin
         fGCWait.Reset;
         fGCWake.Wait(30000);
 
@@ -587,8 +584,13 @@ type
     class method InitGC;
     begin
       if FGCLoaded then exit;
-      var i: Integer; 
-      StackTop := IntPtr(@i);
+      var i: Integer;
+      StackTop := ^IntPtr(@i);
+      InitGCInt;
+    end;
+
+    class method InitGCInt;
+    begin
       FGCLoaded := true;
       {$IFNDEF WEBASSEMBLY}
       Utilities.SpinLockEnter(var fLock);
@@ -679,9 +681,9 @@ type
     {$ENDIF}
 
   public
+
     class method GC(&aWait: Boolean);
     begin
-
       {$IFDEF WEBASSEMBLY}
       DoGC;
       {$ELSE}
@@ -690,6 +692,16 @@ type
       if &aWait then
         fGCWait.Wait;
       {$ENDIF}
+    end;
+
+    class method Collect(c: Integer);
+    begin
+      GC(c <> 0);
+    end;
+
+    class method Collect;
+    begin
+      GC(false);
     end;
 
     {$IFDEF DOUBLEFREECHECK}
@@ -763,7 +775,7 @@ type
       if ptr = 0 then exit;
       Debug('AddRef: ');
       Debug(IntPtr(ptr));
-      if (^Void(o) < {$IFDEF WEBASSEMBLY}^Void(@StackTop){$ELSE}lList^.StackTop{$ENDIF}) and (^Void(o) >= ^Void(@o)) then exit; // on the stack, should be relatively rare
+      if (^Void(o) < {$IFDEF WEBASSEMBLY}^Void(StackTop){$ELSE}lList^.StackTop{$ENDIF}) and (^Void(o) >= ^Void(@o)) then exit; // on the stack, should be relatively rare
       dec(ptr, sizeOf(IntPtr));
       InternalCalls.Increment(var ^MyIntPtr(ptr)^);
       InternalCalls.And(var ^MyIntPtr(ptr)^, not ColorMask);
@@ -875,7 +887,7 @@ type
       if not FGCLoaded then InitGC;
       {$ENDIF}
       // value is on the stack, should be relatively rare
-      if (^Void(@aDest.fInst) < {$IFDEF WEBASSEMBLY}^Void(@StackTop){$ELSE}lList^.StackTop{$ENDIF}) and (^Void(@aDest.fInst) >= ^Void(@lList)) then begin
+      if (^Void(@aDest.fInst) < {$IFDEF WEBASSEMBLY}^Void(StackTop){$ELSE}lList^.StackTop{$ENDIF}) and (^Void(@aDest.fInst) >= ^Void(@lList)) then begin
         aDest.fInst := aSource.fInst;
         exit;
       end;
@@ -1182,14 +1194,6 @@ type
           exit(true);
 
       result := false;
-    end;
-  end;
-
-  SimpleGCExt = public extension class(Utilities)
-  public
-    class method Collect(c: Integer);
-    begin
-      SimpleGC.GC(c <> 0);
     end;
   end;
 

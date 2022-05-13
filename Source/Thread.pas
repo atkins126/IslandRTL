@@ -1,7 +1,9 @@
 ﻿namespace RemObjects.Elements.System;
 
 interface
+
 {$IFNDEF NOTHREADS}
+
 type
   ParameterizedThreadStart = public delegate (obj: Object);
 
@@ -157,7 +159,7 @@ type
   private
   {$IFDEF WINDOWS}
     fCond: rtl.CONDITION_VARIABLE;
-  {$ELSEIF POSIX}
+  {$ELSEIF POSIX_LIGHT}
     fCond: rtl.pthread_cond_t;
   {$ELSE}
   {$ERROR NOT IMPLEMENTED}
@@ -303,8 +305,12 @@ type
 method WindowsThreadProc(aParam: ^Void): rtl.DWORD;
 {$ENDIF}
 {$ENDIF}
+
 implementation
+
 {$IFNDEF NOTHREADS}
+
+{$IFDEF FUCHSIA}[Warning("Thread.GetPriority is not implemented for Fuchsia, yet.")]{$ENDIF}
 method Thread.GetPriority: ThreadPriority;
 begin
   {$IFDEF WINDOWS}
@@ -315,16 +321,21 @@ begin
   else if pri =  0 then exit ThreadPriority.Normal
   else if pri =  1 then exit ThreadPriority.AboveNormal
   else if pri >  1 then exit ThreadPriority.Highest;
-  {$ELSE}
+  {$ELSEIF FUCHSIA}
+  raise new NotImplementedException("Thread.GetPriority is not implemented for Fuchsia, yet.");
+  {$WARNING Thread.GetPriority is not implemented for Fuchsia, yet.}
+  {$ELSEIF POSIX}
   var pol: Int32;
   var sched: rtl.__struct_sched_param;
   rtl. pthread_getschedparam(fthread, @pol, @sched);
-  var pri := {$IFDEF EMSCRIPTEN or DARWIN or ARM64}sched.sched_priority{$ELSE}sched.__sched_priority{$ENDIF};
+  var pri := {$IFDEF DARWIN or ARM64 OR FUCHSIA}sched.sched_priority{$ELSE}sched.__sched_priority{$ENDIF};
   if pri < -1 then exit ThreadPriority.Lowest
   else if pri = -1 then exit ThreadPriority.BelowNormal
   else if pri =  0 then exit ThreadPriority.Normal
   else if pri =  1 then exit ThreadPriority.AboveNormal
   else if pri >  1 then exit ThreadPriority.Highest;
+  {$ELSE}
+  {$ERROR Unsupported platform}
   {$ENDIF}
 end;
 
@@ -478,6 +489,8 @@ begin
   {$ENDIF}
 end;
 
+{$IFDEF DARWIN}[Warning("Thread.Name cannot be setbon Darwin")]{$ENDIF}
+{$IFDEF FUCHSIA}[Warning("Thread.Name cannot be setbon Fuchsia")]{$ENDIF}
 method Thread.set_Name(value: String);
 begin
   if not String.IsNullOrEmpty(Name) or (Name.Trim.Length <> 0) then begin
@@ -496,10 +509,8 @@ begin
     except
     end;
     {$ELSE}
-    {$IFNDEF EMSCRIPTEN}
-    {$IFNDEF DARWIN}
+    {$IFNDEF DARWIN OR FUCHSIA}
     rtl.pthread_setname_np(fthread, @Name.ToAnsiChars[0])
-    {$ENDIF}
     {$ENDIF}
     {$ENDIF}
   end;
